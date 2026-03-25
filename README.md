@@ -10,7 +10,7 @@ This application helps researchers and engineers:
 - Create labeling sessions with custom binary labels.
 - Annotate quickly with UI buttons or keyboard shortcuts.
 - Track progress and productivity with dashboard metrics.
-- Export datasets in two formats (full metadata vs AI-ready minimal format).
+- Export datasets in two formats (full metadata - AI minimal format).
 
 ## Tech Stack
 
