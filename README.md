@@ -16,7 +16,10 @@ This application helps researchers and engineers:
 
 - Backend: Flask
 - ORM / Database: Flask-SQLAlchemy + SQLite
-- Frontend: Bootstrap 5 + HTML + Vanilla JavaScript
+- Frontend: Bootstrap 5 + modular frontend architecture
+  - HTML templates for structure
+  - Dedicated CSS in `static/css/app.css` for styling
+  - Vanilla JavaScript modules in `static/js/` for behavior
 - Charts: Chart.js
 
 ## Project Structure
@@ -44,6 +47,10 @@ ProjetThailand/
   static/
     css/
       app.css
+    js/
+      labeling.js
+      history.js
+      charts.js
   scripts/
     seed_demo_data.py
   uploads/

@@ -64,9 +64,9 @@ def seed_demo_data(count: int, reset: bool) -> None:
 
         total = ImageRecord.query.count()
         labeled = ImageRecord.query.filter_by(status="labeled").count()
-        print(f"✅ Generated data: {len(records)} entries")
-        print(f"📊 Current database: total={total}, labeled={labeled}")
-        print("➡️ Open /dashboard to view the charts.")
+        print(f" Generated data: {len(records)} entries")
+        print(f" Current database: total={total}, labeled={labeled}")
+        print(" Open /dashboard to view the charts.")
 
 
 def main() -> None:

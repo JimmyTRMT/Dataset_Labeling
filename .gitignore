@@ -10,7 +10,8 @@ dataset.db
 # Project specific
 uploads/*
 !uploads/.gitkeep
-exports/*.csv
+exports/*
+!exports/.gitkeep
 
 # IDE
 .vscode/
