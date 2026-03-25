@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prototype - Dataset Labeling</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/app.css', v='2') }}" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg bg-white border-bottom mb-4 project-navbar">
+    <div class="container nav-shell">
+        <a class="nav-logo-link" href="{{ url_for('main.index', auto_advance='1' if auto_advance else '0') }}" aria-label="Home">
+            <img src="{{ url_for('static', filename='img/kasetart-university-logo.svg') }}" class="nav-logo" alt="Kasetsart University logo">
+        </a>
+        <a class="navbar-brand nav-title" href="{{ url_for('main.index', auto_advance='1' if auto_advance else '0') }}">Dataset Labeling</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.index', auto_advance='1' if auto_advance else '0', session_name=active_session or None) }}#labeling-section">Labeling</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.history') }}">History</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.dashboard') }}">Dashboard</a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container py-2">
+    <div class="row mb-3">
+        <div class="col">
+            <h1 class="h3">Image Labeling</h1>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="toast-container position-fixed top-0 end-0 p-3" id="toast-container">
+                {% for category, message in messages %}
+                    <div
+                        class="toast align-items-center text-bg-{% if category == 'success' %}success{% elif category == 'warning' %}warning{% else %}secondary{% endif %} border-0 mb-2"
+                        role="alert"
+                        aria-live="assertive"
+                        aria-atomic="true"
+                        data-bs-delay="1400"
+                    >
+                        <div class="d-flex">
+                            <div class="toast-body">{{ message }}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h2 class="h5">Statistics</h2>
+                    {% if active_session %}
+                        <p class="small text-muted mb-2">Active session: <strong>{{ active_session }}</strong></p>
+                    {% endif %}
+                    <p class="mb-2">
+                        <strong>{{ labeled_count }}/{{ total_count }}</strong> labeled images
+                    </p>
+                    <div class="progress mb-3" role="progressbar" aria-label="Labeling progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar" id="label-progress-bar" data-progress="{{ progress_percent }}">{{ progress_percent }}%</div>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Unlabeled</span>
+                            <strong>{{ unlabeled_count }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Labeled</span>
+                            <strong>{{ labeled_count }}</strong>
+                        </li>
+                    </ul>
+                    {% if active_session %}
+                        <a href="{{ url_for('api.export_csv_for_session', session_name=active_session, format='full') }}" class="btn btn-outline-success w-100 mt-3">Export Full Dataset (session)</a>
+                        <a href="{{ url_for('api.export_csv_for_session', session_name=active_session, format='ai') }}" class="btn btn-outline-success w-100 mt-2">Export AI Dataset (session)</a>
+                    {% else %}
+                        <a href="{{ url_for('api.export_csv', format='full') }}" class="btn btn-outline-success w-100 mt-3">Export Full Dataset (global)</a>
+                        <a href="{{ url_for('api.export_csv', format='ai') }}" class="btn btn-outline-success w-100 mt-2">Export AI Dataset (global)</a>
+                    {% endif %}
+                    <a href="{{ url_for('main.history') }}" class="btn btn-outline-primary w-100 mt-2">Go to History</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card shadow-sm" id="labeling-section">
+                <div class="card-body">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h2 class="h5 mb-0">Labeling interface</h2>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="auto-advance-toggle" {% if auto_advance %}checked{% endif %}>
+                            <label class="form-check-label" for="auto-advance-toggle">Auto-advance</label>
+                        </div>
+                    </div>
+
+                    {% if unlabeled_image %}
+                        <p class="text-muted mb-1">Selected image: <strong>{{ unlabeled_image.original_filename }}</strong></p>
+                        <p class="small text-muted">Active labels: <strong>{{ label_one }}</strong> / <strong>{{ label_two }}</strong> · Shortcuts: <strong>1</strong> / <strong>2</strong></p>
+                        <div class="text-center mb-3">
+                            <img src="{{ url_for('main.serve_upload', filename=unlabeled_image.stored_filename) }}"
+                                 id="main-image-preview"
+                                 class="img-fluid rounded border preview-image"
+                                 alt="Image to label">
+                        </div>
+                        <form method="POST" action="{{ url_for('api.assign_label', image_id=unlabeled_image.id) }}" class="d-flex gap-2" id="label-form">
+                            <input type="hidden" name="auto_advance" id="auto-advance-input" value="{{ '1' if auto_advance else '0' }}">
+                            <input type="hidden" name="session_name" id="session-name-input" value="{{ unlabeled_image.session_name }}">
+                            <input type="hidden" name="label" id="selected-label-input" value="">
+                            <button type="submit" class="btn flex-fill label-one-btn" data-label="{{ label_one }}" id="btn-label-one">① {{ label_one }}</button>
+                            <button type="submit" class="btn flex-fill label-two-btn" data-label="{{ label_two }}" id="btn-label-two">② {{ label_two }}</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('api.delete_image', image_id=unlabeled_image.id) }}" class="mt-2" id="delete-image-form">
+                            <input type="hidden" name="auto_advance" value="{{ '1' if auto_advance else '0' }}">
+                            <input type="hidden" name="session_name" value="{{ unlabeled_image.session_name }}">
+                            <button type="submit" class="btn btn-outline-danger w-100" id="btn-delete-image">Delete this image</button>
+                        </form>
+
+                        {% if unlabeled_images %}
+                            <hr>
+                            <h3 class="h6">Pending images</h3>
+                            <div class="row row-cols-3 row-cols-md-4 g-2">
+                                {% for image in unlabeled_images %}
+                                    <div class="col">
+                                        <a href="{{ url_for('main.index', image_id=image.id, auto_advance='1' if auto_advance else '0', session_name=image.session_name) }}" class="d-block border rounded p-1 {% if image.id == unlabeled_image.id %}border-primary{% endif %}">
+                                            <img src="{{ url_for('main.serve_upload', filename=image.stored_filename) }}"
+                                                    class="img-fluid rounded thumb-image"
+                                                 alt="{{ image.original_filename }}"
+                                                    >
+                                        </a>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    {% elif unlabeled_images %}
+                        <div class="alert alert-secondary mb-3">
+                            Auto-advance is disabled. Select an image from the list below.
+                        </div>
+                        <h3 class="h6">Pending images</h3>
+                        <div class="row row-cols-3 row-cols-md-4 g-2">
+                            {% for image in unlabeled_images %}
+                                <div class="col">
+                                    <a href="{{ url_for('main.index', image_id=image.id, auto_advance='0', session_name=image.session_name) }}" class="d-block border rounded p-1">
+                                        <img src="{{ url_for('main.serve_upload', filename=image.stored_filename) }}"
+                                             class="img-fluid rounded thumb-image"
+                                             alt="{{ image.original_filename }}">
+                                    </a>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-success mb-0">
+                            <p class="mb-2">All images have been processed.</p>
+                            {% if active_session %}
+                                <div class="export-actions mt-3">
+                                    <a class="btn btn-outline-success" href="{{ url_for('api.export_csv_for_session', session_name=active_session, format='full') }}">Export Full Session Dataset</a>
+                                    <a class="btn btn-outline-success" href="{{ url_for('api.export_csv_for_session', session_name=active_session, format='ai') }}">Export Session AI Dataset</a>
+                                </div>
+                            {% else %}
+                                <div class="export-actions mt-3">
+                                    <a class="btn btn-outline-success" href="{{ url_for('api.export_csv', format='full') }}">Export Full Global Dataset</a>
+                                    <a class="btn btn-outline-success" href="{{ url_for('api.export_csv', format='ai') }}">Export Global AI Dataset</a>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Sync the progress bar width with server-computed percentage
+const progressBar = document.getElementById("label-progress-bar");
+if (progressBar) {
+    const progressValue = parseInt(progressBar.dataset.progress || "0", 10);
+    progressBar.style.width = progressValue + "%";
+    const progressContainer = progressBar.closest(".progress");
+    if (progressContainer) {
+        progressContainer.setAttribute("aria-valuenow", String(progressValue));
+    }
+}
+
+// Display flash messages as Bootstrap toasts
+const flashToasts = document.querySelectorAll(".toast");
+flashToasts.forEach(function (element) {
+    const toast = new bootstrap.Toast(element);
+    toast.show();
+});
+
+const labelForm = document.getElementById("label-form");
+let labelFormSubmitting = false;
+const selectedLabelInput = document.getElementById("selected-label-input");
+const autoAdvanceToggle = document.getElementById("auto-advance-toggle");
+const autoAdvanceInput = document.getElementById("auto-advance-input");
+
+// Keep auto-advance
+function updateAutoAdvanceState(value) {
+    const normalized = value ? "1" : "0";
+    const url = new URL(window.location.href);
+    url.searchParams.set("auto_advance", normalized);
+    if (autoAdvanceInput) {
+        autoAdvanceInput.value = normalized;
+    }
+    window.history.replaceState({}, "", url.toString());
+    localStorage.setItem("autoAdvance", normalized);
+}
+
+if (autoAdvanceToggle) {
+    const storedAutoAdvance = localStorage.getItem("autoAdvance");
+    if (storedAutoAdvance === "0" || storedAutoAdvance === "1") {
+        const shouldEnable = storedAutoAdvance === "1";
+        autoAdvanceToggle.checked = shouldEnable;
+        updateAutoAdvanceState(shouldEnable);
+    } else {
+        updateAutoAdvanceState(autoAdvanceToggle.checked);
+    }
+
+    autoAdvanceToggle.addEventListener("change", function () {
+        updateAutoAdvanceState(autoAdvanceToggle.checked);
+    });
+}
+
+// Submit label choice with a short visual feedback pulse.
+function submitWithVisualFeedback(button) {
+    if (!labelForm || !button || labelFormSubmitting) {
+        return;
+    }
+
+    const labelValue = button.dataset.label || "";
+    if (selectedLabelInput) {
+        selectedLabelInput.value = labelValue;
+    }
+
+    labelFormSubmitting = true;
+    button.classList.add("label-submit-pulse");
+    setTimeout(function () {
+        if (autoAdvanceInput && autoAdvanceToggle) {
+            autoAdvanceInput.value = autoAdvanceToggle.checked ? "1" : "0";
+        }
+        labelForm.submit();
+    }, 140);
+}
+
+const buttonLabelOne = document.getElementById("btn-label-one");
+const buttonLabelTwo = document.getElementById("btn-label-two");
+
+if (buttonLabelOne) {
+    buttonLabelOne.addEventListener("click", function (event) {
+        event.preventDefault();
+        submitWithVisualFeedback(buttonLabelOne);
+    });
+}
+
+if (buttonLabelTwo) {
+    buttonLabelTwo.addEventListener("click", function (event) {
+        event.preventDefault();
+        submitWithVisualFeedback(buttonLabelTwo);
+    });
+}
+
+// Keyboard shortcuts
+document.addEventListener("keydown", function (event) {
+    const focusedTagName = document.activeElement ? document.activeElement.tagName : "";
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(focusedTagName)) {
+        return;
+    }
+
+    const key = event.key.toLowerCase();
+    if (key === "1") {
+        if (buttonLabelOne) {
+            buttonLabelOne.click();
+        }
+    } else if (key === "2") {
+        if (buttonLabelTwo) {
+            buttonLabelTwo.click();
+        }
+    }
+});
+</script>
+</body>
+</html>

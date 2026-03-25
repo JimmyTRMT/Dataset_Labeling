@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Database
+instance/
+dataset.db
+
+# Project specific
+uploads/*
+!uploads/.gitkeep
+exports/*.csv
+
+# IDE
+.vscode/
+.idea/
