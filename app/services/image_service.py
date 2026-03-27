@@ -24,6 +24,7 @@ def persist_uploaded_images(
     session_name: str,
     label_option_1: str,
     label_option_2: str,
+    custom_labels: str | None = None,
 ) -> tuple[list[ImageRecord], bool]:
     # Returns (saved_records, invalid_detected).
     upload_path = Path(upload_folder)
@@ -52,6 +53,7 @@ def persist_uploaded_images(
                 session_name=session_name,
                 label_option_1=label_option_1,
                 label_option_2=label_option_2,
+                custom_labels=custom_labels,
                 status="unlabeled",
             )
         )

@@ -20,6 +20,7 @@ class ImageRecord(db.Model):
     session_name = db.Column(db.String(255), nullable=False, default="Default Session")
     label_option_1 = db.Column(db.String(100), nullable=False, default="labelOne")
     label_option_2 = db.Column(db.String(100), nullable=False, default="labelTwo")
+    custom_labels = db.Column(db.Text, nullable=True)
 
     uploaded_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     labeled_at = db.Column(db.DateTime, nullable=True)
@@ -44,6 +45,7 @@ class ImageRecord(db.Model):
             "session_name": self.session_name,
             "label_option_1": self.label_option_1,
             "label_option_2": self.label_option_2,
+            "custom_labels": self.custom_labels or "",
             "uploaded_at": self.uploaded_at.isoformat() if self.uploaded_at else "",
             "labeled_at": self.labeled_at.isoformat() if self.labeled_at else "",
             "label": self.label or "",

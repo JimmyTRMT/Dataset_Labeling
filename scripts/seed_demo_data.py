@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import random
 import sys
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -14,6 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app import create_app
 from app.models import ImageRecord, db
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,9 +67,9 @@ def seed_demo_data(count: int, reset: bool) -> None:
 
         total = ImageRecord.query.count()
         labeled = ImageRecord.query.filter_by(status="labeled").count()
-        print(f" Generated data: {len(records)} entries")
-        print(f" Current database: total={total}, labeled={labeled}")
-        print(" Open /dashboard to view the charts.")
+        logging.info(f" Generated data: {len(records)} entries")
+        logging.info(f" Current database: total={total}, labeled={labeled}")
+        logging.info(" Open /dashboard to view the charts.")
 
 
 def main() -> None:
