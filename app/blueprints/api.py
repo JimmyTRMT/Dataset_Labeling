@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import json
 from flask import Blueprint, current_app, flash, redirect, request, send_file, url_for
 from ..models import ImageRecord, db
 from ..services.export_service import build_export_csv
@@ -24,6 +25,21 @@ def upload_images():
         or request.form.get("label_two", "").strip()
         or "labelTwo"
     )
+    
+    labels_from_form = request.form.getlist("custom_labels")
+    labels_from_form = [lbl.strip() for lbl in labels_from_form if lbl.strip()]
+    
+    if not labels_from_form:
+        l1 = request.form.get("label_option_1", "").strip() or request.form.get("label_one", "").strip() or "labelOne"
+        l2 = request.form.get("label_option_2", "").strip() or request.form.get("label_two", "").strip() or "labelTwo"
+        labels_from_form = [l1, l2]
+        
+    custom_labels_json = json.dumps(labels_from_form)
+    
+    # Backward compatibility with required DB columns
+    label_one_fallback = labels_from_form[0] if len(labels_from_form) > 0 else "labelOne"
+    label_two_fallback = labels_from_form[1] if len(labels_from_form) > 1 else "labelTwo"
+    
     upload_mode = request.form.get("upload_mode", "new")
 
     existing_session_image = None
@@ -39,6 +55,9 @@ def upload_images():
 
         label_one = existing_session_image.label_option_1
         label_two = existing_session_image.label_option_2
+        label_one_fallback = existing_session_image.label_option_1
+        label_two_fallback = existing_session_image.label_option_2
+        custom_labels_json = existing_session_image.custom_labels
     else:
         session_name = ensure_unique_session_name(session_name)
 
@@ -50,8 +69,9 @@ def upload_images():
         files,
         current_app.config["UPLOAD_FOLDER"],
         session_name=session_name,
-        label_option_1=label_one,
-        label_option_2=label_two,
+        label_option_1=label_one_fallback,
+        label_option_2=label_two_fallback,
+        custom_labels=custom_labels_json,
     )
 
     for record in saved_records:

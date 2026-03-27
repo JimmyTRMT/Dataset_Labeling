@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+import json
 from flask import Blueprint, current_app, render_template, request, send_file
 from sqlalchemy import func
 from ..models import ImageRecord, db
@@ -30,8 +31,13 @@ def index():
         unlabeled_image.last_viewed_at = datetime.utcnow()
         db.session.commit()
 
-    label_one = unlabeled_image.label_option_1 if unlabeled_image else "Label 1"
-    label_two = unlabeled_image.label_option_2 if unlabeled_image else "Label 2"
+    labels = []
+    if unlabeled_image and unlabeled_image.custom_labels:
+        try:
+            labels = json.loads(unlabeled_image.custom_labels)
+        except Exception:
+            pass
+
     if not unlabeled_image and active_session:
         session_reference = (
             ImageRecord.query.filter_by(session_name=active_session)
@@ -39,8 +45,16 @@ def index():
             .first()
         )
         if session_reference:
-            label_one = session_reference.label_option_1
-            label_two = session_reference.label_option_2
+            if session_reference.custom_labels:
+                try:
+                    labels = json.loads(session_reference.custom_labels)
+                except Exception:
+                    pass
+
+    if not labels:
+        label_one = unlabeled_image.label_option_1 if unlabeled_image else "Label 1"
+        label_two = unlabeled_image.label_option_2 if unlabeled_image else "Label 2"
+        labels = [label_one, label_two]
 
     labeled_query = ImageRecord.query.filter_by(status="labeled")
     if active_session:
@@ -61,8 +75,9 @@ def index():
         progress_percent=progress_percent,
         auto_advance=auto_advance,
         active_session=active_session,
-        label_one=label_one,
-        label_two=label_two,
+        label_one=labels[0] if len(labels) > 0 else "Label 1",
+        label_two=labels[1] if len(labels) > 1 else "Label 2",
+        labels=labels,
     )
 
 
@@ -86,6 +101,15 @@ def history():
             .first()
         )
         if reference:
+            custom_labels = []
+            if reference.custom_labels:
+                try:
+                    custom_labels = json.loads(reference.custom_labels)
+                except Exception:
+                    pass
+            if not custom_labels:
+                custom_labels = [reference.label_option_1, reference.label_option_2]
+
             sessions_rows.append(
                 {
                     "session_name": session_name,
@@ -94,6 +118,7 @@ def history():
                     "last_upload": reference.uploaded_at,
                     "label_one": reference.label_option_1,
                     "label_two": reference.label_option_2,
+                    "labels": custom_labels,
                 }
             )
 
@@ -110,6 +135,15 @@ def history():
             .first()
         )
     suggested_source = selected_reference or latest_record
+    
+    suggested_labels = []
+    if suggested_source and suggested_source.custom_labels:
+        try:
+            suggested_labels = json.loads(suggested_source.custom_labels)
+        except Exception:
+            pass
+    if not suggested_labels and suggested_source:
+        suggested_labels = [suggested_source.label_option_1, suggested_source.label_option_2]
 
     return render_template(
         "history.html",
@@ -117,6 +151,7 @@ def history():
         suggested_session_name=suggested_source.session_name if suggested_source else default_session_name,
         suggested_label_one=suggested_source.label_option_1 if suggested_source else "labelOne",
         suggested_label_two=suggested_source.label_option_2 if suggested_source else "labelTwo",
+        suggested_labels=suggested_labels if suggested_labels else ["labelOne", "labelTwo"],
     )
 
 

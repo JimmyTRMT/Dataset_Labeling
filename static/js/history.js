@@ -6,14 +6,14 @@ document.querySelectorAll(".toast").forEach(function (element) {
 
 const addSessionButtons = document.querySelectorAll(".add-session-btn");
 const sessionInput = document.getElementById("session_name");
-const labelOneInput = document.getElementById("label_option_1");
-const labelTwoInput = document.getElementById("label_option_2");
 const fileInput = document.getElementById("images");
 const chooseFilesButton = document.getElementById("choose-files-btn");
 const selectedFilesText = document.getElementById("selected-files-text");
 const uploadModeInput = document.getElementById("upload_mode");
 const uploadModeHint = document.getElementById("upload-mode-hint");
 const uploadForm = document.getElementById("session-upload-form");
+const labelsContainer = document.getElementById("labels-container");
+const addLabelBtn = document.getElementById("add-label-btn");
 
 function updateSelectedFilesText() {
     if (!fileInput || !selectedFilesText) {
@@ -44,16 +44,59 @@ if (fileInput) {
     fileInput.addEventListener("change", updateSelectedFilesText);
 }
 
+// Manage dynamic labels addition
+if (addLabelBtn && labelsContainer) {
+    addLabelBtn.addEventListener("click", function () {
+        const div = document.createElement("div");
+        div.className = "input-group mb-2";
+        
+        const input = document.createElement("input");
+        input.type = "text";
+        input.name = "custom_labels";
+        input.className = "form-control";
+        input.placeholder = "New label";
+        input.required = true;
+        
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "btn btn-outline-danger remove-label-btn";
+        removeBtn.textContent = "X";
+        removeBtn.onclick = function() { div.remove(); };
+        
+        div.appendChild(input);
+        div.appendChild(removeBtn);
+        labelsContainer.appendChild(div);
+    });
+}
+
+// Manage dynamic labels removal for existing elements
+if (labelsContainer) {
+    labelsContainer.addEventListener("click", function(e) {
+        if (e.target.classList.contains("remove-label-btn")) {
+            e.target.closest(".input-group").remove();
+        }
+    });
+}
+
 // Fill session form with existing session metadata before appending images.
 function switchToExistingSessionMode(buttonElement) {
     if (sessionInput) {
         sessionInput.value = buttonElement.dataset.sessionName || "";
     }
-    if (labelOneInput) {
-        labelOneInput.value = buttonElement.dataset.labelOne || "";
-    }
-    if (labelTwoInput) {
-        labelTwoInput.value = buttonElement.dataset.labelTwo || "";
+    
+    if (labelsContainer && buttonElement.dataset.labels) {
+        try {
+            const labels = JSON.parse(buttonElement.dataset.labels);
+            labelsContainer.innerHTML = "";
+            labels.forEach((lbl) => {
+                const div = document.createElement("div");
+                div.className = "input-group mb-2";
+                div.innerHTML = `<input name="custom_labels" type="text" class="form-control" value="${lbl}" required>`;
+                labelsContainer.appendChild(div);
+            });
+        } catch (e) {
+            console.error("Error parsing labels", e);
+        }
     }
     if (uploadModeInput) {
         uploadModeInput.value = "existing";

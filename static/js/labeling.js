@@ -70,20 +70,13 @@ function submitWithVisualFeedback(button) {
     }, 140);
 }
 
-const buttonLabelOne = document.getElementById("btn-label-one");
-const buttonLabelTwo = document.getElementById("btn-label-two");
-
-if (buttonLabelOne) {
-    buttonLabelOne.addEventListener("click", function (event) {
-        event.preventDefault();
-        submitWithVisualFeedback(buttonLabelOne);
-    });
-}
-
-if (buttonLabelTwo) {
-    buttonLabelTwo.addEventListener("click", function (event) {
-        event.preventDefault();
-        submitWithVisualFeedback(buttonLabelTwo);
+const dynamicLabelButtons = document.querySelectorAll(".dynamic-label-btn");
+if (dynamicLabelButtons.length > 0) {
+    dynamicLabelButtons.forEach(function (btn) {
+        btn.addEventListener("click", function (event) {
+            event.preventDefault();
+            submitWithVisualFeedback(btn);
+        });
     });
 }
 
@@ -95,13 +88,11 @@ document.addEventListener("keydown", function (event) {
     }
 
     const key = event.key.toLowerCase();
-    if (key === "1") {
-        if (buttonLabelOne) {
-            buttonLabelOne.click();
-        }
-    } else if (key === "2") {
-        if (buttonLabelTwo) {
-            buttonLabelTwo.click();
+    
+    const num = parseInt(key, 10);
+    if (!isNaN(num) && num >= 1 && num <= 9) {
+        if (num <= dynamicLabelButtons.length) {
+            dynamicLabelButtons[num - 1].click();
         }
     }
 });

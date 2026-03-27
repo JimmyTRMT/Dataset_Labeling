@@ -54,15 +54,17 @@
                             <label for="session_name" class="form-label">Session name</label>
                             <input id="session_name" name="session_name" type="text" class="form-control" value="{{ suggested_session_name }}" required>
                         </div>
-                        <div class="row g-2">
-                            <div class="col-md-6">
-                                <label for="label_option_1" class="form-label">Label 1</label>
-                                <input id="label_option_1" name="label_option_1" type="text" class="form-control" value="{{ suggested_label_one }}" required>
+                        <div class="mb-2">
+                            <label class="form-label d-block">Labels</label>
+                            <div id="labels-container">
+                                {% for lbl in suggested_labels %}
+                                    <div class="input-group mb-2">
+                                        <input name="custom_labels" type="text" class="form-control" value="{{ lbl }}" required>
+                                        {% if loop.index > 2 %}<button type="button" class="btn btn-outline-danger remove-label-btn">X</button>{% endif %}
+                                    </div>
+                                {% endfor %}
                             </div>
-                            <div class="col-md-6">
-                                <label for="label_option_2" class="form-label">Label 2</label>
-                                <input id="label_option_2" name="label_option_2" type="text" class="form-control" value="{{ suggested_label_two }}" required>
-                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="add-label-btn">+ Add a label</button>
                         </div>
                         <div class="mt-3 mb-3">
                             <label for="images" class="form-label">Images (multi-upload)</label>
@@ -105,7 +107,7 @@
                                     {% for row in sessions_rows %}
                                         <tr>
                                             <td>{{ row.session_name }}</td>
-                                            <td>{{ row.label_one }} / {{ row.label_two }}</td>
+                                        <td>{{ row.labels | join(' / ') }}</td>
                                             <td>{{ row.image_count }}</td>
                                             <td>{{ row.labeled_count or 0 }}</td>
                                             <td>{{ row.last_upload }}</td>
@@ -114,8 +116,7 @@
                                                     type="button"
                                                     class="btn btn-sm btn-outline-primary add-session-btn"
                                                     data-session-name="{{ row.session_name }}"
-                                                    data-label-one="{{ row.label_one }}"
-                                                    data-label-two="{{ row.label_two }}"
+                                                data-labels="{{ row.labels | tojson | forceescape }}"
                                                 >Add images</button>
                                                 <div class="session-action-row">
                                                     <a class="btn btn-sm btn-outline-success" href="{{ url_for('api.export_csv_for_session', session_name=row.session_name, format='full') }}">Full Dataset</a>

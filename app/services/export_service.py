@@ -14,6 +14,7 @@ EXPORT_FIELDS = [
     "session_name",
     "label_option_1",
     "label_option_2",
+    "custom_labels",
     "uploaded_at",
     "labeled_at",
     "label",

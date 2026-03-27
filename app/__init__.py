@@ -62,4 +62,6 @@ def ensure_schema_compatibility() -> None:
         db.session.execute(text("ALTER TABLE images ADD COLUMN last_viewed_at DATETIME"))
     if "labeling_duration_seconds" not in existing_columns:
         db.session.execute(text("ALTER TABLE images ADD COLUMN labeling_duration_seconds FLOAT"))
+    if "custom_labels" not in existing_columns:
+        db.session.execute(text("ALTER TABLE images ADD COLUMN custom_labels TEXT"))
     db.session.commit()

@@ -71,7 +71,11 @@ python -m venv .venv
 
 pip install -r requirements.txt
 
-### 4) Run the application
+### 4) Configure the environment
+
+Create a `.env` file at the root of the project to store your configurations (like `SECRET_KEY`, `FLASK_DEBUG`, etc.). Check the Technical Guide for an example.
+
+### 5) Run the application
 
 python -m app
 
@@ -81,18 +85,16 @@ Open http://127.0.0.1:5000 in your browser.
 
 ### Session concept
 
-A **session** groups uploaded images and keeps a dedicated pair of labels (Label 1 / Label 2).
+A **session** groups uploaded images and keeps a dedicated set of custom labels.
 You can either:
 - Create a new session.
 - Append images to an existing session from the History page.
 
 ### Labeling process
 
-On the Labeling page:
+On the Labeling page, you can use the main action buttons to assign labels or press keyboard shortcuts:
 - Use the two main action buttons to assign labels.
-- Press keyboard shortcuts:
-  - `1` → Label 1
-  - `2` → Label 2
+- The keys `1` through `9` are automatically mapped to the first nine labels of your session.
 - Enable or disable auto-advance depending on your review strategy.
 
 ### Export formats
