@@ -1,6 +1,6 @@
 # Image Labeling Platform (Flask)
 
-Lightweight web platform to build labeled image datasets for AI research workflows.
+Web platform to build labeled image datasets for AI research workflows.
 It supports session-based annotation, keyboard-driven labeling, and export-ready CSV files.
 
 ## Project Overview
