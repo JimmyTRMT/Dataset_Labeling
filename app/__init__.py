@@ -1,8 +1,11 @@
 import logging
 from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import Flask
 from sqlalchemy import inspect, text
+
+load_dotenv()
 
 from .blueprints.api import api_bp
 from .blueprints.main import main_bp
@@ -33,6 +36,8 @@ def create_app() -> Flask:
 
     if not flask_app.debug:
         logging.basicConfig(level=logging.INFO)
+        if flask_app.config["SECRET_KEY"] == Config.DefaultSecretKey:
+            logging.warning("Default secret key is active while debug mode is disabled. Set SecretKey in your environment before production use.")
 
     flask_app.register_blueprint(main_bp)
     flask_app.register_blueprint(api_bp)

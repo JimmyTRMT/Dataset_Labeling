@@ -73,7 +73,11 @@ pip install -r requirements.txt
 
 ### 4) Configure the environment
 
-Create a `.env` file at the root of the project to store your configurations (like `SECRET_KEY`, `FLASK_DEBUG`, etc.). Check the Technical Guide for an example.
+Use `.env.example` as a template and create your local `.env` file at project root.
+Command on PowerShell: `Copy-Item .env.example .env`
+Then edit `.env` with your local values.
+
+Security rule: never commit `.env` to GitHub.
 
 ### 5) Run the application
 
@@ -131,3 +135,16 @@ Optional environment variables:
 - `UPLOAD_FOLDER`
 - `EXPORT_FOLDER`
 - `FLASK_DEBUG`
+
+Security setup with `.env.example`:
+- `SecretKey` controls Flask session signing.
+- `DatabaseUrl` controls database connection. If missing, the app uses a local SQLite database by default.
+- `UploadFolder` and `ExportFolder` define storage paths.
+- `FlaskDebug` controls debug mode.
+
+Recommended contributor flow:
+1. Copy `.env.example` to `.env`.
+2. Keep fake values for quick local startup or replace them with your own local values.
+3. Keep `.env` private and never push it to GitHub.
+
+For deeper technical details, see `TECHNICAL_GUIDE.md`.

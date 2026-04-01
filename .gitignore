@@ -16,3 +16,8 @@ exports/*
 # IDE
 .vscode/
 .idea/
+
+# Environment
+.env
+.env.local
+.env.*.local

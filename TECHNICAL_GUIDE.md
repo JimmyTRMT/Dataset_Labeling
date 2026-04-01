@@ -247,16 +247,21 @@ This prevents browser-localized text (e.g., French "Choisir des fichiers") from 
 
 All sensitive and deployment-specific settings are externalized via environment variables:
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///dataset.db")
-UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-EXPORT_FOLDER = os.getenv("EXPORT_FOLDER", "exports")
-FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false")
+SecretKey = os.getenv("SecretKey") or os.getenv("SECRET_KEY")
+DatabaseUrl = os.getenv("DatabaseUrl") or os.getenv("DATABASE_URL")
+UploadFolder = os.getenv("UploadFolder") or os.getenv("UPLOAD_FOLDER")
+ExportFolder = os.getenv("ExportFolder") or os.getenv("EXPORT_FOLDER")
+FlaskDebug = os.getenv("FlaskDebug") or os.getenv("FLASK_DEBUG")
 
 **Security Implications:**
-- Production deployments must override `SECRET_KEY` (preventing session hijacking).
-- Database credentials can be embedded in DATABASE_URL without hardcoding.
+- Production deployments must override `SecretKey` (preventing session hijacking).
+- Database credentials can be embedded in `DatabaseUrl` without hardcoding.
 - Folder permissions are controlled externally (CI/CD or container orchestration handles creation).
+
+`.env` workflow:
+- Keep a tracked template file named `.env.example` with fake values.
+- Create `.env` locally from the template.
+- Keep `.env` in `.gitignore` to avoid secret leaks on GitHub.
 
 ### 5.2 Cross-Platform Path Handling
 
@@ -313,11 +318,16 @@ In production:
 
 Example `.env` file (not versioned in Git):
 
-SECRET_KEY=your-production-secret-key-here
-DATABASE_URL=postgresql://user:password@db-host:5432/labeling_db
-UPLOAD_FOLDER=/mnt/uploads
-EXPORT_FOLDER=/mnt/exports
-FLASK_DEBUG=false
+SecretKey=your-production-secret-key-here
+DatabaseUrl=postgresql://user:password@db-host:5432/labeling_db
+UploadFolder=uploads
+ExportFolder=exports
+FlaskDebug=false
+
+Contributor setup:
+1. Copy `.env.example` to `.env`.
+2. Keep local values for development.
+3. Replace `SecretKey` and `DatabaseUrl` with production values only in secure deployment environments.
 
 Load via:
 export $(cat .env | xargs)
