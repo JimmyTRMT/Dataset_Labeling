@@ -1,3 +1,4 @@
+#python -m app
 from . import create_app
 
 

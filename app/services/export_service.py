@@ -3,7 +3,6 @@ from datetime import datetime
 from pathlib import Path
 import re
 from typing import Sequence
-
 from ..models import ImageRecord
 
 

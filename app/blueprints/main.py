@@ -12,13 +12,16 @@ main_bp = Blueprint("main", __name__)
 
 @main_bp.get("/")
 def index():
+    # Get session filter from query parameters
     active_session = request.args.get("session_name", "").strip()
     unlabeled_query = ImageRecord.query.filter_by(status="unlabeled")
     if active_session:
         unlabeled_query = unlabeled_query.filter_by(session_name=active_session)
 
+    # Fetch unlabeled images sorted by upload time
     unlabeled_images = unlabeled_query.order_by(ImageRecord.uploaded_at.asc()).all()
 
+    # Check auto-advance setting and get selected image
     auto_advance = request.args.get("auto_advance", default="1") != "0"
     selected_image_id = request.args.get("image_id", type=int)
     unlabeled_image = None
@@ -31,6 +34,7 @@ def index():
         unlabeled_image.last_viewed_at = datetime.utcnow()
         db.session.commit()
 
+    # Parse custom labels or fallback to defaults
     labels = []
     if unlabeled_image and unlabeled_image.custom_labels:
         try:
@@ -38,6 +42,7 @@ def index():
         except Exception:
             pass
 
+    # If no image, try to get labels from session reference
     if not unlabeled_image and active_session:
         session_reference = (
             ImageRecord.query.filter_by(session_name=active_session)
@@ -51,11 +56,13 @@ def index():
                 except Exception:
                     pass
 
+    # Use image labels or defaults
     if not labels:
         label_one = unlabeled_image.label_option_1 if unlabeled_image else "Label 1"
         label_two = unlabeled_image.label_option_2 if unlabeled_image else "Label 2"
         labels = [label_one, label_two]
 
+    # Calculate progress stat
     labeled_query = ImageRecord.query.filter_by(status="labeled")
     if active_session:
         labeled_query = labeled_query.filter_by(session_name=active_session)
@@ -65,6 +72,7 @@ def index():
     total_count = unlabeled_count + labeled_count
     progress_percent = int((labeled_count / total_count) * 100) if total_count > 0 else 0
 
+    # Render labeling
     return render_template(
         "index.html",
         unlabeled_images=unlabeled_images,
@@ -83,6 +91,7 @@ def index():
 
 @main_bp.get("/history")
 def history():
+    # Fetch all unique session name
     session_names = (
         db.session.query(ImageRecord.session_name)
         .distinct()
@@ -90,6 +99,7 @@ def history():
         .all()
     )
 
+    # Build session stat
     sessions_rows: list[dict] = []
     for session_entry in session_names:
         session_name = session_entry.session_name
@@ -122,8 +132,10 @@ def history():
                 }
             )
 
+    # Sort by most recent upload
     sessions_rows.sort(key=lambda row: row["last_upload"], reverse=True)
 
+    # Get suggested labels from selected or latest session
     latest_record = ImageRecord.query.order_by(ImageRecord.uploaded_at.desc()).first()
     default_session_name = f"Session {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
     selected_session_name = request.args.get("session_name", "").strip()
@@ -136,6 +148,7 @@ def history():
         )
     suggested_source = selected_reference or latest_record
     
+    # Parse suggested labels
     suggested_labels = []
     if suggested_source and suggested_source.custom_labels:
         try:
@@ -145,6 +158,7 @@ def history():
     if not suggested_labels and suggested_source:
         suggested_labels = [suggested_source.label_option_1, suggested_source.label_option_2]
 
+    # Render history page
     return render_template(
         "history.html",
         sessions_rows=sessions_rows,
@@ -157,6 +171,7 @@ def history():
 
 @main_bp.get("/dashboard")
 def dashboard():
+    # Count labeled images by label
     labeled_rows = (
         db.session.query(ImageRecord.label, func.count(ImageRecord.id))
         .filter(ImageRecord.status == "labeled")
@@ -164,6 +179,7 @@ def dashboard():
         .all()
     )
 
+    # Build label statistics dictionary
     label_counts: dict[str, int] = {}
     for label_name, count in labeled_rows:
         display_label = label_name or "(No label)"
@@ -171,6 +187,7 @@ def dashboard():
     if not label_counts:
         label_counts = {"No data": 1}
 
+    # Calculate average labeling time
     average_seconds = (
         db.session.query(func.avg(ImageRecord.labeling_duration_seconds))
         .filter(ImageRecord.labeling_duration_seconds.isnot(None))
@@ -178,6 +195,7 @@ def dashboard():
     )
     avg_labeling_seconds = float(average_seconds) if average_seconds is not None else None
 
+    # Get labels per day for chart
     labels_per_day_rows = (
         db.session.query(func.date(ImageRecord.labeled_at), func.count(ImageRecord.id))
         .filter(ImageRecord.status == "labeled", ImageRecord.labeled_at.isnot(None))
@@ -186,12 +204,14 @@ def dashboard():
         .all()
     )
 
+    # Format daily data
     day_labels: list[str] = []
     day_values: list[int] = []
     for day_value, count in labels_per_day_rows:
         day_labels.append(str(day_value))
         day_values.append(int(count))
 
+    # Render dashboard with statistics
     return render_template(
         "dashboard.html",
         chart_labels=list(label_counts.keys()),
@@ -205,4 +225,5 @@ def dashboard():
 
 @main_bp.get("/uploads/<path:filename>")
 def serve_upload(filename: str):
+    # Serve uploaded file from upload folder
     return send_file(Path(current_app.config["UPLOAD_FOLDER"]) / filename)

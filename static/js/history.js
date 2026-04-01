@@ -15,6 +15,7 @@ const uploadForm = document.getElementById("session-upload-form");
 const labelsContainer = document.getElementById("labels-container");
 const addLabelBtn = document.getElementById("add-label-btn");
 
+// Update the text that shows how many files are selected.
 function updateSelectedFilesText() {
     if (!fileInput || !selectedFilesText) {
         return;
@@ -112,6 +113,7 @@ function switchToExistingSessionMode(buttonElement) {
     }
 }
 
+// Attach event listeners to "Add to Session" buttons
 addSessionButtons.forEach(function (buttonElement) {
     buttonElement.addEventListener("click", function () {
         switchToExistingSessionMode(buttonElement);

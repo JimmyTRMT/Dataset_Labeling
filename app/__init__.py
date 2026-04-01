@@ -1,19 +1,16 @@
 import logging
 from pathlib import Path
-
 from dotenv import load_dotenv
 from flask import Flask
 from sqlalchemy import inspect, text
-
 load_dotenv()
-
 from .blueprints.api import api_bp
 from .blueprints.main import main_bp
 from .config import Config
 from .error_handlers import register_error_handlers
 from .models import db
 
-
+# Application factory and setup
 def create_app() -> Flask:
     project_root = Path(Config.PROJECT_ROOT)
     flask_app = Flask(
@@ -29,7 +26,7 @@ def create_app() -> Flask:
     export_dir.mkdir(exist_ok=True, parents=True)
 
     db.init_app(flask_app)
-
+    # Create database tables and ensure compatibility with older schemas
     with flask_app.app_context():
         db.create_all()
         ensure_schema_compatibility()
@@ -55,7 +52,7 @@ def ensure_schema_compatibility() -> None:
     table_names = inspector.get_table_names()
     if "images" not in table_names:
         return
-
+    # Check for missing columns and add them if necessary
     existing_columns = {column["name"] for column in inspector.get_columns("images")}
     if "session_name" not in existing_columns:
         db.session.execute(text("ALTER TABLE images ADD COLUMN session_name VARCHAR(255) DEFAULT 'Default Session'"))

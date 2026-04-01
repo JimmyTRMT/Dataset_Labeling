@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
 
-
+# Helper function to interpret environment variables as booleans
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
-
+# Application configuration class that reads from environment variables
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DefaultSecretKey = "dev-change-me-secret"
