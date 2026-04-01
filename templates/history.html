@@ -59,7 +59,7 @@
                             <div id="labels-container">
                                 {% for lbl in suggested_labels %}
                                     <div class="input-group mb-2">
-                                        <input name="custom_labels" type="text" class="form-control" value="{{ lbl }}" required>
+                                        <input name="custom_labels" type="text" class="form-control" value="{{ lbl }}" placeholder="Enter label" required>
                                         {% if loop.index > 2 %}<button type="button" class="btn btn-outline-danger remove-label-btn">X</button>{% endif %}
                                     </div>
                                 {% endfor %}
