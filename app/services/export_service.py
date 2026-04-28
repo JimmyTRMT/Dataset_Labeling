@@ -21,7 +21,7 @@ EXPORT_FIELDS = [
 ]
 
 EXPORT_FIELDS_AI = [
-    "filename",
+    "image_path",
     "label",
 ]
 
@@ -53,14 +53,16 @@ def build_export_csv(
 
     selected_fields = EXPORT_FIELDS if normalized_format == "full" else EXPORT_FIELDS_AI
 
-    with export_path.open("w", newline="", encoding="utf-8") as csv_file:
+    # utf-8-sig writes a BOM so Excel on Windows opens Thai/accented text correctly.
+    with export_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=selected_fields)
         writer.writeheader()
         for image in images:
             if normalized_format == "ai":
+                # Forward slash path is portable across OS and matches what PIL/torchvision expect.
                 writer.writerow(
                     {
-                        "filename": image.stored_filename,
+                        "image_path": f"uploads/{image.stored_filename}",
                         "label": image.label or "",
                     }
                 )

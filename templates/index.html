@@ -110,7 +110,7 @@
 
                     {% if unlabeled_image %}
                         <p class="text-muted mb-1">Selected image: <strong>{{ unlabeled_image.original_filename }}</strong></p>
-                        <p class="small text-muted">Active labels: <strong>{{ labels | join(' / ') }}</strong> · Shortcuts: <strong>1</strong> to <strong>9</strong></p>
+                        <p class="small text-muted">Active labels: <strong>{{ labels | join(' / ') }}</strong>{% if labels|length >= 1 %} · Shortcuts: <strong>1</strong>{% if labels|length >= 2 %} to <strong>{{ [labels|length, 9]|min }}</strong>{% endif %}{% if labels|length > 9 %} (no shortcut beyond 9){% endif %}{% endif %}</p>
                         <div class="text-center mb-3">
                             <img src="{{ url_for('main.serve_upload', filename=unlabeled_image.stored_filename) }}"
                                  id="main-image-preview"
@@ -118,16 +118,21 @@
                                  alt="Image to label">
                         </div>
                         <form method="POST" action="{{ url_for('api.assign_label', image_id=unlabeled_image.id) }}" class="d-flex flex-wrap gap-2 justify-content-center" id="label-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="auto_advance" id="auto-advance-input" value="{{ '1' if auto_advance else '0' }}">
                             <input type="hidden" name="session_name" id="session-name-input" value="{{ unlabeled_image.session_name }}">
                             <input type="hidden" name="label" id="selected-label-input" value="">
                             {% for lbl in labels %}
                                 <button type="submit" class="btn flex-fill btn-outline-primary dynamic-label-btn" data-label="{{ lbl }}">
-                                    {{ lbl }} <span class="badge bg-secondary ms-2">{{ loop.index }}</span>
+                                    {{ lbl }}
+                                    {% if loop.index <= 9 %}
+                                        <span class="badge bg-secondary ms-2">{{ loop.index }}</span>
+                                    {% endif %}
                                 </button>
                             {% endfor %}
                         </form>
                         <form method="POST" action="{{ url_for('api.delete_image', image_id=unlabeled_image.id) }}" class="mt-2" id="delete-image-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="auto_advance" value="{{ '1' if auto_advance else '0' }}">
                             <input type="hidden" name="session_name" value="{{ unlabeled_image.session_name }}">
                             <button type="submit" class="btn btn-outline-danger w-100" id="btn-delete-image">Delete this image</button>

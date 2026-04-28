@@ -1,11 +1,10 @@
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 
-# Database models 
 db = SQLAlchemy()
 
+
 class ImageRecord(db.Model):
-    # One uploaded image and its labeling metadata.
     __tablename__ = "images"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -24,16 +23,14 @@ class ImageRecord(db.Model):
 
     label = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(20), nullable=False, default="unlabeled")
-    #
+
     def mark_as_labeled(self, label_value: str, duration_seconds: float | None = None) -> None:
-        # Update the record to reflect that it has been labeled.
         self.label = label_value
         self.status = "labeled"
         self.labeled_at = datetime.utcnow()
         self.labeling_duration_seconds = duration_seconds
         self.last_viewed_at = None
 
-        # Convert the record to a dictionary suitable for CSV export.
     def to_export_row(self) -> dict:
         return {
             "id": self.id,

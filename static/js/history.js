@@ -4,6 +4,21 @@ document.querySelectorAll(".toast").forEach(function (element) {
     toast.show();
 });
 
+// Force English validation messages regardless of the browser locale.
+function applyEnglishValidationMessages(input) {
+    const fileMessage = "Please choose at least one file.";
+    const fillMessage = "Please fill in this field.";
+    input.addEventListener("invalid", function () {
+        if (input.validity.valueMissing) {
+            input.setCustomValidity(input.type === "file" ? fileMessage : fillMessage);
+        }
+    });
+    input.addEventListener("input", function () {
+        input.setCustomValidity("");
+    });
+}
+document.querySelectorAll("input[required], textarea[required]").forEach(applyEnglishValidationMessages);
+
 const addSessionButtons = document.querySelectorAll(".add-session-btn");
 const sessionInput = document.getElementById("session_name");
 const fileInput = document.getElementById("images");
@@ -57,7 +72,8 @@ if (addLabelBtn && labelsContainer) {
         input.className = "form-control";
         input.placeholder = "New label";
         input.required = true;
-        
+        applyEnglishValidationMessages(input);
+
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn btn-outline-danger remove-label-btn";
@@ -94,6 +110,10 @@ function switchToExistingSessionMode(buttonElement) {
                 div.className = "input-group mb-2";
                 div.innerHTML = `<input name="custom_labels" type="text" class="form-control" value="${lbl}" required>`;
                 labelsContainer.appendChild(div);
+                const created = div.querySelector("input");
+                if (created) {
+                    applyEnglishValidationMessages(created);
+                }
             });
         } catch (e) {
             console.error("Error parsing labels", e);

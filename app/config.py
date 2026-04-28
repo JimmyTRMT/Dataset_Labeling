@@ -1,31 +1,36 @@
 import os
 from pathlib import Path
 
-# Helper function to interpret environment variables as booleans
+
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
-# Application configuration class that reads from environment variables
+
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    DefaultSecretKey = "dev-change-me-secret"
-    DefaultDatabasePath = (PROJECT_ROOT / "dataset.db").resolve().as_posix()
-    DefaultDatabaseUrl = f"sqlite:///{DefaultDatabasePath}"
-    DefaultUploadFolder = str((PROJECT_ROOT / "uploads").resolve())
-    DefaultExportFolder = str((PROJECT_ROOT / "exports").resolve())
-    EnvSecretKey = os.getenv("SecretKey") or os.getenv("SECRET_KEY")
-    EnvDatabaseUrl = os.getenv("DatabaseUrl") or os.getenv("DATABASE_URL")
-    EnvUploadFolder = os.getenv("UploadFolder") or os.getenv("UPLOAD_FOLDER")
-    EnvExportFolder = os.getenv("ExportFolder") or os.getenv("EXPORT_FOLDER")
-    EnvFlaskDebug = os.getenv("FlaskDebug") or os.getenv("FLASK_DEBUG")
+    DEFAULT_SECRET_KEY = "dev-change-me-secret"
+    DEFAULT_DATABASE_PATH = (PROJECT_ROOT / "dataset.db").resolve().as_posix()
+    DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_DATABASE_PATH}"
+    DEFAULT_UPLOAD_FOLDER = str((PROJECT_ROOT / "uploads").resolve())
+    DEFAULT_EXPORT_FOLDER = str((PROJECT_ROOT / "exports").resolve())
 
-    SECRET_KEY = EnvSecretKey or DefaultSecretKey
-    SQLALCHEMY_DATABASE_URI = EnvDatabaseUrl or DefaultDatabaseUrl
+    # Both naming conventions accepted so deployments can use either.
+    ENV_SECRET_KEY = os.getenv("SecretKey") or os.getenv("SECRET_KEY")
+    ENV_DATABASE_URL = os.getenv("DatabaseUrl") or os.getenv("DATABASE_URL")
+    ENV_UPLOAD_FOLDER = os.getenv("UploadFolder") or os.getenv("UPLOAD_FOLDER")
+    ENV_EXPORT_FOLDER = os.getenv("ExportFolder") or os.getenv("EXPORT_FOLDER")
+    ENV_FLASK_DEBUG = os.getenv("FlaskDebug") or os.getenv("FLASK_DEBUG")
+
+    SECRET_KEY = ENV_SECRET_KEY or DEFAULT_SECRET_KEY
+    SQLALCHEMY_DATABASE_URI = ENV_DATABASE_URL or DEFAULT_DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    UPLOAD_FOLDER = EnvUploadFolder or DefaultUploadFolder
-    EXPORT_FOLDER = EnvExportFolder or DefaultExportFolder
+    UPLOAD_FOLDER = ENV_UPLOAD_FOLDER or DEFAULT_UPLOAD_FOLDER
+    EXPORT_FOLDER = ENV_EXPORT_FOLDER or DEFAULT_EXPORT_FOLDER
 
-    DEBUG = _as_bool(EnvFlaskDebug, default=False)
+    # Cap upload size to 16 MB to prevent RAM/disk exhaustion.
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+
+    DEBUG = _as_bool(ENV_FLASK_DEBUG, default=False)
