@@ -49,6 +49,7 @@
                 <div class="card-body">
                     <h2 class="h5">New upload session</h2>
                     <form method="POST" action="{{ url_for('api.upload_images') }}" enctype="multipart/form-data" id="session-upload-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" id="upload_mode" name="upload_mode" value="new">
                         <div class="mb-3">
                             <label for="session_name" class="form-label">Session name</label>
@@ -59,7 +60,7 @@
                             <div id="labels-container">
                                 {% for lbl in suggested_labels %}
                                     <div class="input-group mb-2">
-                                        <input name="custom_labels" type="text" class="form-control" value="{{ lbl }}" required>
+                                        <input name="custom_labels" type="text" class="form-control" value="{{ lbl }}" placeholder="Enter label" required>
                                         {% if loop.index > 2 %}<button type="button" class="btn btn-outline-danger remove-label-btn">X</button>{% endif %}
                                     </div>
                                 {% endfor %}
@@ -78,9 +79,6 @@
                             <button class="btn btn-primary" type="submit">Create session</button>
                         </div>
                         <p class="small text-muted mt-2 mb-0" id="upload-mode-hint">Current mode: new session</p>
-                    </form>
-                    <form method="POST" action="{{ url_for('api.reset_session') }}" class="mt-2">
-                        <button class="btn btn-outline-secondary w-100" type="submit">Reset (archive and restart)</button>
                     </form>
                 </div>
             </div>
@@ -123,6 +121,7 @@
                                                     <a class="btn btn-sm btn-outline-success" href="{{ url_for('api.export_csv_for_session', session_name=row.session_name, format='ai') }}">AI Dataset</a>
                                                 </div>
                                                 <form method="POST" action="{{ url_for('api.delete_session', session_name=row.session_name) }}" class="d-inline delete-session-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <button type="submit" class="btn btn-sm btn-danger mt-2">Delete session</button>
                                                 </form>
                                             </td>

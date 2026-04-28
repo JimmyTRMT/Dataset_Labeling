@@ -13,63 +13,54 @@
 
 ### 1.1 Application Factory Pattern
 
-The application employs the Factory Pattern through the `create_app()` function in `app/__init__.py`. This design separates application initialization from configuration, enabling flexible instantiation and testing workflows.
+`create_app()` in `app/__init__.py` builds and returns a configured Flask instance. This isolates initialization from import-time side effects, which is essential for testing and for deploying multiple variants of the app from the same code.
 
-**Benefits:**
-- **Decoupling:** Configuration files and factory logic are independent, allowing environment-specific setup (development, testing, production).
-- **Testability:** Multiple app instances can be created with different configs without side effects.
-- **Simplicity:** A single entry point (`python -m app`) bootstraps the entire system.
-
-**Initialization Steps:**
-1. Create Flask instance with paths resolved via `pathlib`.
-2. Load configuration from environment variables (via `Config` class).
-3. Create upload/export directories if missing.
-4. Initialize SQLAlchemy ORM with `db.init_app()`.
-5. Create database table schema on first run (idempotent).
-6. Register Blueprints (main, api) and error handlers.
+**Initialization sequence:**
+1. Resolve project paths via `pathlib.Path` (cross-platform).
+2. Load configuration from environment variables through the `Config` class.
+3. Create `uploads/` and `exports/` directories if missing (idempotent).
+4. Initialize SQLAlchemy ORM (`db.init_app`).
+5. Initialize CSRF protection (`csrf.init_app`).
+6. Run `db.create_all()` and `ensure_schema_compatibility()` to add any missing columns to legacy SQLite databases.
+7. **Fail fast** if `FlaskDebug=false` and `SecretKey` is still the default placeholder. The app refuses to start, raising `RuntimeError`.
+8. Register Blueprints (main, api) and error handlers (404, 413, 500).
 
 ### 1.2 Blueprint Architecture
 
-Blueprints modularize routing logic and responsibility separation:
-
 - **main_bp** (`blueprints/main.py`):
-  - GET `/` : Render the labeling interface with session awareness.
-  - GET `/history` : Render the session management and upload form.
-  - GET `/dashboard` : Render analytics (distribution, pace, average time).
-  - GET `/uploads/<filename>` : Serve locally stored images.
+  - GET `/` : Render the labeling interface.
+  - GET `/history` : Render session list and upload form.
+  - GET `/dashboard` : Render analytics.
+  - GET `/uploads/<filename>` : Serve images via `send_from_directory` (path traversal safe).
 
-- **api_bp** (`blueprints/api.py`, with prefix `/api`):
-  - POST `/upload` : Accept image uploads and create database records.
-  - POST `/label/<id>` : Update image status and assign label.
-  - GET `/export` : Generate and return full global CSV.
-  - GET `/export/session/<name>` : Generate session-scoped CSV.
-  - POST `/delete-session/<name>` : Destroy session and linked files.
-  - POST `/delete-image/<id>` : Remove single image (disk and database).
-  - POST `/reset-session` : Archive current session.
+- **api_bp** (`blueprints/api.py`, prefix `/api`):
+  - POST `/upload` : Accept image batches, persist files, create records.
+  - POST `/label/<id>` : Assign a label and record `labeling_duration_seconds`.
+  - GET `/export` : Global CSV export.
+  - GET `/export/session/<name>` : Per-session CSV export.
+  - POST `/delete-session/<name>` : Drop session records and files.
+  - POST `/delete-image/<id>` : Drop a single record and its file.
 
-This separation keeps UI logic distinct from data/API logic, easing maintenance and scaling.
+All POST routes require a CSRF token (Flask-WTF, hidden `csrf_token` input in every form).
 
 ### 1.3 Service Layer
 
-Two service modules encapsulate business logic:
-
 - **image_service.py:**
-  - `is_allowed_file()` : Validates file extensions against a whitelist.
-  - `persist_uploaded_images()` : Saves files to disk, creates database records, returns metadata.
+  - `is_allowed_file()` : Extension whitelist check.
+  - `persist_uploaded_images()` : Saves files with collision-resistant names (`{timestamp}_{uuid8}.{ext}`) and returns `ImageRecord` instances.
 
 - **export_service.py:**
-  - `build_export_csv()` : Generates CSV files in two formats (full metadata or AI).
-  - Supports legacy format names ("complet"/"ia") for backward compatibility.
+  - `build_export_csv()` : Writes a CSV with `utf-8-sig` encoding (Excel-friendly BOM, still parseable by `pandas.read_csv` without options).
+  - Supports legacy format aliases (`complet`->`full`, `ia`->`ai`) for backward-compatible URLs.
+  - `_sanitize_filename_part()` : Strips characters outside `[a-zA-Z0-9_-]` from filenames.
 
-### 1.4 Frontend Separation of Concerns
+### 1.4 Utility Layer
 
-The frontend follows a strict Separation of Concerns model:
+`app/utils/labels.py` exposes `parse_custom_labels(raw)` which safely decodes the JSON-serialized `custom_labels` column, returning `[]` on missing/invalid input. Used by both `main.py` GET routes to avoid duplicated `try/except json.loads` blocks.
 
-- **HTML templates (`templates/*.html`)** are responsible for page structure and server-side rendering.
-- **CSS (`static/css/app.css`)** handles visual presentation and responsive styling.
-- **JavaScript modules (`static/js/*.js`)** implement page behavior and client-side interactions.
+### 1.5 Frontend Separation
 
-This architecture keeps templates clean, improves maintainability, and enables better browser caching because JavaScript files can be cached independently from server-rendered HTML.
+Templates handle structure and server-side rendering. Styling lives in `static/css/app.css`. Behavior lives in `static/js/{labeling,history,charts}.js`. Templates only include `<script src=...>` tags and JSON payloads; they never embed inline JS logic.
 
 ## 2. Database Schema
 
@@ -78,263 +69,210 @@ This architecture keeps templates clean, improves maintainability, and enables b
 | Field | Type | Constraints | Purpose |
 |-------|------|-------------|---------|
 | `id` | Integer | Primary Key | Unique identifier. |
-| `original_filename` | String(255) | Not Null | User-facing filename (for export/reference). |
-| `stored_filename` | String(255) | Unique, Not Null | Server-side filename (timestamp_uuid format). |
-| `file_path` | String(500) | Not Null | Absolute disk path (for cleanup/migration). |
+| `original_filename` | String(255) | Not Null | User-facing filename (preserved for export). |
+| `stored_filename` | String(255) | Unique, Not Null | Server filename: `{timestamp}_{uuid[:8]}.{ext}`. |
+| `file_path` | String(500) | Not Null | Absolute disk path (used as primary deletion candidate). |
 | `session_name` | String(255) | Default="Default Session" | Groups images by annotation batch. |
-| `label_option_1` | String(100) | Default="labelOne" | First binary label for the session. |
-| `label_option_2` | String(100) | Default="labelTwo" | Second binary label for the session. |
-| `uploaded_at` | DateTime | Default=utcnow, Not Null | Timestamp when file was uploaded. |
-| `labeled_at` | DateTime | Nullable | Timestamp when image was labeled (null if unlabeled). |
-| `last_viewed_at` | DateTime | Nullable | When the image was first displayed to the annotator. |
-| `labeling_duration_seconds` | Float | Nullable | Time elapsed from display to confirmation. |
-| `label` | String(100) | Nullable | The assigned label value (null if unlabeled). |
-| `status` | String(20) | Default="unlabeled", Not Null | State: "unlabeled" or "labeled". |
+| `label_option_1` | String(100) | Default="labelOne" | First label of the session (legacy two-label compat). |
+| `label_option_2` | String(100) | Default="labelTwo" | Second label of the session (legacy two-label compat). |
+| `custom_labels` | Text | Nullable | JSON-encoded list of N labels for the session. |
+| `uploaded_at` | DateTime | Default=utcnow, Not Null | Upload timestamp. |
+| `labeled_at` | DateTime | Nullable | Label assignment timestamp. |
+| `last_viewed_at` | DateTime | Nullable | Reset on every GET `/` so refresh/tab-switch don't inflate the timing. |
+| `labeling_duration_seconds` | Float | Nullable | `labeled_at - last_viewed_at`. |
+| `label` | String(100) | Nullable | Assigned label value. |
+| `status` | String(20) | Default="unlabeled", Not Null | "unlabeled" or "labeled". |
 
 ### 2.2 Key Methods
 
-- **mark_as_labeled(label_value, duration_seconds):** Atomically updates status, label, labeled_at, and labeling_duration_seconds. Clears last_viewed_at to prevent re-timing.
-
-- **to_export_row():** Returns a dictionary suitable.
+- **`mark_as_labeled(label_value, duration_seconds)`** : Atomically sets `label`, `status="labeled"`, `labeled_at=utcnow()`, `labeling_duration_seconds`, and clears `last_viewed_at`.
+- **`to_export_row()`** : Returns a dict shaped for the full CSV export.
 
 ### 2.3 Schema Evolution
 
-The `ensure_schema_compatibility()` function (in `__init__.py`) uses SQLAlchemy introspection to add missing columns to existing SQLite databases. This prevents schema mismatch errors when deploying schema updates to already deployed instances.
+`ensure_schema_compatibility()` introspects the SQLite `images` table on startup and runs `ALTER TABLE ADD COLUMN` for any missing field (`session_name`, `label_option_1`, `label_option_2`, `last_viewed_at`, `labeling_duration_seconds`, `custom_labels`). Skipped on non-SQLite engines because their ALTER syntax differs.
 
 ## 3. Data Workflow
 
 ### 3.1 Upload Flow
 
-User selects images (form) 
-  - POST /api/upload 
-  - persist_uploaded_images() {
-       - Validate extension (ALLOWED_EXTENSIONS)
-       - Secure filename (werkzeug.utils.secure_filename)
-       - Generate unique name: "{timestamp}_{uuid[:8]}.{ext}"
-       - Write to disk (UPLOAD_FOLDER)
-       - Create ImageRecord in database (status="unlabeled")
-     }
-  - Flash success message
-  - Redirect to labeling page
+```
+User submits multipart form
+  -> POST /api/upload (CSRF-checked, 16 MB cap)
+  -> persist_uploaded_images():
+       - Validate extension against ALLOWED_EXTENSIONS
+       - secure_filename() on original name
+       - Generate unique stored name: {timestamp}_{uuid8}.{ext}
+       - Save to UPLOAD_FOLDER
+       - Build ImageRecord with status="unlabeled"
+  -> Bulk insert + commit
+  -> Flash success
+  -> Redirect to labeling page (with session_name)
+```
 
-**Key Design Choices:**
-- **Filename Collision Avoidance:** Timestamp + UUID prefix ensures uniqueness even under concurrent uploads.
-- **Original Filename Preservation:** stored in original_filename for human-readable export.
-- **Session Grouping:** All uploads in one form request share a session_name, linking images for common labels.
+If the request body exceeds 16 MB, the global 413 handler intercepts and flashes a friendly warning instead of crashing.
 
 ### 3.2 Labeling Flow
 
-User views image on GET /
-  - Flask renders current ImageRecord (status="unlabeled")
-  - Last_viewed_at = now (for timing)
-  - User presses keyboard key 1 or 2 (or clicks button)
-  - POST /api/label/<id> with selected label
-  - mark_as_labeled(label, duration_seconds)
-  - Database commit
-  - Flash success message
-  - If auto_advance is enabled:
-       - Query next unlabeled image in session
-       - Redirect with ?image_id=... (preserve URL state)
-     Else:
-       - Stay on labeling page (manual image selection)
+```
+User opens GET /
+  -> last_viewed_at = utcnow() (reset every load)
+  -> Render image + label buttons (badges 1-9 only)
+User presses key 1..9 OR clicks a label button
+  -> POST /api/label/<id>
+  -> duration = utcnow() - last_viewed_at
+  -> mark_as_labeled(label, duration)
+  -> If auto_advance: redirect to next unlabeled image_id
+  -> Else: stay on page, manual selection
+```
 
-**Timing Metric:**
-Duration is calculated as `labeled_at - last_viewed_at`, representing the time from first display to confirmation. This metric feeds the dashboard's "Average Labeling Time" chart.
+Resetting `last_viewed_at` on every page load fixes the prior bug where a refresh after a long pause (lunch break, tab in background) inflated the recorded duration.
 
 ### 3.3 Export Flow
 
-#### Full Dataset Format (CSV)
-Columns: id, original_filename, stored_filename, session_name, label_option_1, label_option_2, uploaded_at, labeled_at, label, status
+#### Full Dataset
 
-**Use Case:** Complete record for audit, retraining, or data analysis (includes metadata and timestamps).
+Columns: `id, original_filename, stored_filename, session_name, label_option_1, label_option_2, custom_labels, uploaded_at, labeled_at, label, status`
 
-#### AI Dataset Format (Minimal)
-Columns: filename, label
+Use case: full audit trail, retraining provenance, traceability.
 
-**Use Case:** Direct import into ML training pipelines. Minimal schema reduces parsing overhead and focuses on the essential label-to-image mapping.
+#### AI Dataset
 
-**Export Process:**
-1. Query labeled images (status="labeled").
-2. Call `build_export_csv(images, export_folder, format="full" or "ai")`.
-3. Sanitize session name for safe filename.
-4. Add timestamp to exported file: `export_sessionname_full_20260325_143022.csv`.
-5. Stream file to user as attachment.
+Columns: `image_path, label`
 
-**Backward Compatibility:**
-Format parameter accepts legacy names ("complet"-"full", "ia"-"ai") via aliases, preventing URL breakage on deployments.
+Sample row: `uploads/20260428023456_a1b2c3d4.png,labelTwo`
+
+The `uploads/` prefix makes the CSV directly consumable by ML pipelines:
+
+```python
+import pandas as pd
+from PIL import Image
+
+df = pd.read_csv("export_global_ai_20260428_103045.csv")
+img = Image.open(df.iloc[0]["image_path"])  # works as long as cwd is the project root
+label = df.iloc[0]["label"]
+```
+
+#### Process
+
+1. Query labeled images.
+2. Call `build_export_csv(images, EXPORT_FOLDER, prefix, format)`.
+3. Sanitize prefix (regex `[^a-zA-Z0-9_-]+` -> `_`).
+4. Filename pattern: `{safe_prefix}_{format}_{YYYYMMDD_HHMMSS}.csv`.
+5. Stream as attachment via `send_file`.
+
+#### Encoding
+
+`utf-8-sig` writes a BOM. Excel on Windows opens the file with correct character display (Thai, French accents, emojis). `pandas.read_csv()` automatically handles the BOM with no extra arguments.
 
 ## 4. Frontend Logic
 
-Frontend behavior is now decoupled from HTML templates and centralized into dedicated JavaScript files:
+### 4.1 Session-Aware URLs
 
-- `static/js/labeling.js` for labeling page interactions (`index.html`).
-- `static/js/history.js` for session/upload page interactions (`history.html`).
-- `static/js/charts.js` for dashboard chart initialization (`dashboard.html`).
+```
+/?session_name=Session+2026-04-28&auto_advance=1&image_id=42
+```
 
-Templates only include external script references and data payloads when needed, which reduces inline complexity and improves long-term maintainability.
-
-### 4.1 Session-Aware Labeling
-
-The labeling interface (`index.html`) persists the active session in URL parameters:
-
-http://localhost:5000/?session_name=Session%202026-03-25&auto_advance=1&image_id=42
-
-**Query Parameters:**
-- `session_name` : Scopes image queries and export operations.
-- `auto_advance` : Enables/disables automatic progression (stored in localStorage for persistence).
-- `image_id` : Forces a specific image (manual selection overrides auto-advance).
+- `session_name` : scopes queries.
+- `auto_advance` : remembered in `localStorage`.
+- `image_id` : forces a specific image (overrides auto-advance).
 
 ### 4.2 Keyboard Shortcuts
 
-JavaScript event listener captures keydown events (unless focused on form inputs):
+`labeling.js` listens to `keydown` events when the focused element is not an `INPUT/TEXTAREA/SELECT`. Keys `1`-`9` map to the first nine `.dynamic-label-btn` elements. Sessions with more than nine labels still work; labels 10+ simply show no shortcut badge.
 
-- Key "1" - Submit with label_option_1
-- Key "2" - Submit with label_option_2
+### 4.3 Progress Bar Hydration
 
-Implementation uses `event.key.toLowerCase()` for cross-browser consistency and checks `document.activeElement.tagName` to avoid interference with text input.
+Server computes `progress_percent` and renders it as `data-progress`. JS reads the attribute and sets `style.width` and `aria-valuenow`. No client-side calculation, so the rendered HTML and the JS view are always in sync.
 
-### 4.3 Progress Visualization
+### 4.4 Dashboard Charts
 
-The main page displays a progress bar (`<div class="progress-bar">`). JavaScript hydrates the bar width from a server-rendered `data-progress` attribute:
+`charts.js` reads JSON payloads embedded in the template via `<script type="application/json" id="...">`, then initializes Chart.js instances (pie + bar). No data is computed in JS, only visualized.
 
-const progressValue = parseInt(progressBar.dataset.progress || "0", 10);
-progressBar.style.width = progressValue + "%";
+### 4.5 Localized UI Overrides
 
-This approach avoids JavaScript-based calculation, delegating computation to the server (cleaner separation of concerns).
+The native file input is hidden; a custom button + read-only text field show "No file selected" / "N files selected" in English, regardless of browser locale.
 
-### 4.4 Dashboard Analytics
-
-The dashboard (`dashboard.html`) uses **Chart.js** (CDN) to visualize three metrics:
-
-1. **Pie Chart (Label Distribution):**
-   - Displays count of images per unique label.
-   - Colors inherit from Bootstrap CSS variables (--bs-success, --bs-danger, --bs-secondary).
-
-2. **Bar Chart (Labels per Day):**
-   - Groups labeled images by the date of labeled_at.
-   - Shows annotation pace over time.
-   - Useful for spotting productivity trends.
-
-3. **Average Labeling Time Card:**
-   - Displays the mean labeling_duration_seconds across all labeled images.
-   - Provides a single metric for efficiency assessment.
-
-**Data Hydration:**
-Flask renders data as JSON inside `<script type="application/json">` tags. JavaScript parses these server-side datasets before chart initialization, avoiding browser security restrictions and enabling static-file hosting in the future.
-
-With this decoupled model, chart initialization logic remains in `static/js/charts.js`, while data stays server-driven in the template. This separation improves caching efficiency and keeps view files focused on content layout.
-
-### 4.5 File Upload UI Customization
-
-The native file input (`<input type="file">`) is hidden (CSS class `d-none`). A custom button ("Choose files") and read-only text field provide an English-only interface:
-
-function updateSelectedFilesText() {
-    const totalFiles = fileInput.files.length;
-    if (totalFiles === 0) {
-        selectedFilesText.value = "No file selected";
-    } else if (totalFiles === 1) {
-        selectedFilesText.value = fileInput.files[0].name;
-    } else {
-        selectedFilesText.value = `${totalFiles} files selected`;
-    }
-}
-
-This prevents browser-localized text (e.g., French "Choisir des fichiers") from appearing in the UI.
+`history.js` calls `setCustomValidity()` on every `required` input so the browser's invalid messages stay in English even on French Windows. The override is reapplied to inputs created dynamically (Add label / Switch session).
 
 ## 5. Security & Portability
 
-### 5.1 Environment-Based Configuration
+### 5.1 CSRF Protection
 
-All sensitive and deployment-specific settings are externalized via environment variables:
+Flask-WTF's `CSRFProtect` is initialized on the app. Every form template includes:
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///dataset.db")
-UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
-EXPORT_FOLDER = os.getenv("EXPORT_FOLDER", "exports")
-FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false")
+```html
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+```
 
-**Security Implications:**
-- Production deployments must override `SECRET_KEY` (preventing session hijacking).
-- Database credentials can be embedded in DATABASE_URL without hardcoding.
-- Folder permissions are controlled externally (CI/CD or container orchestration handles creation).
+Cross-site POST attempts are rejected with HTTP 400 by default.
 
-### 5.2 Cross-Platform Path Handling
+### 5.2 Environment-Based Configuration
 
-The `pathlib.Path` library is used throughout instead of string concatenation:
+```python
+SECRET_KEY = os.getenv("SecretKey") or os.getenv("SECRET_KEY") or DEFAULT_SECRET_KEY
+# Identical pattern for DatabaseUrl, UploadFolder, ExportFolder, FlaskDebug
+```
 
-from pathlib import Path
+If `FlaskDebug=false` and `SECRET_KEY == DEFAULT_SECRET_KEY`, `create_app()` raises `RuntimeError`. This prevents accidental production deployments with a forgeable session cookie.
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-upload_dir = Path(app.config["UPLOAD_FOLDER"])
-file_path = upload_dir / filename
+### 5.3 Path Safety
 
-**Advantages:**
-- Automatic slash normalization (/ on Unix, \ on Windows).
-- `.resolve()` returns absolute paths without manual os.path.join() calls.
-- `.mkdir(exist_ok=True, parents=True)` is cleaner than os.makedirs().
+- `serve_upload` uses `send_from_directory` which delegates to `werkzeug.security.safe_join`. Paths like `/uploads/../dataset.db` return 404.
+- All filesystem code uses `pathlib.Path`, so paths render correctly on Windows and POSIX.
+- `werkzeug.utils.secure_filename` is applied to every uploaded filename.
 
-**Portability:**
-Code runs unchanged on Windows, Linux, and macOS without path hardcoding.
+### 5.4 Upload Hardening
 
-### 5.3 File Security
+- Whitelist: `{png, jpg, jpeg, bmp, gif, tif, tiff, webp}`. SVG is intentionally excluded (XSS vector).
+- `MAX_CONTENT_LENGTH = 16 MB`. Larger payloads are rejected before reaching disk.
+- Stored filenames are server-generated UUIDs. Original filename is preserved separately.
+- 413 handler converts the rejection into a flash message + redirect, not a stack trace.
 
-- **Filename Sanitization:** `werkzeug.utils.secure_filename()` prevents path traversal attacks (e.g., "../../etc/passwd").
-- **Extension Whitelist:** Only image formats are accepted (ALLOWED_EXTENSIONS = {png, jpg, jpeg, bmp, gif, tif, tiff, webp}).
-- **Unique Naming:** Server-generated filenames prevent enumeration and collision exploits.
+### 5.5 Database Safety
 
-### 5.4 Database Security
-
-- **SQLAlchemy ORM:** Parameterized queries prevent SQL injection.
-- **SQLite Local Development:** Simple, file-based database suitable for single-user workflows. Production deployments should use PostgreSQL or MySQL.
-- **TRACK_MODIFICATIONS = False:** Disables Flask-SQLAlchemy event tracking (performance optimization, requires manual relationship management).
+All queries use SQLAlchemy ORM (`filter_by`, `get_or_404`). The only raw SQL (`text()`) is the schema migrator, which uses hardcoded DDL strings — no user input concatenation.
 
 ## 6. Deployment Considerations
 
-### 6.1 Production WSGI Server
+### 6.1 WSGI Server
 
-For production, replace Flask's debug server (`app.run()`) with a WSGI application server:
+`gunicorn` is included in `requirements.txt`. Production launch:
 
+```
 gunicorn --workers 4 --bind 0.0.0.0:5000 "app:create_app()"
+```
 
-### 6.2 Database Persistence
+### 6.2 Database
 
-- **SQLite:** Suitable for research/prototype deployments. Ensure the database file is on a persistent volume.
-- **PostgreSQL:** Recommended for multi-user or cloud deployments. Update DATABASE_URL:
-  DATABASE_URL=postgresql://user:password@localhost:5432/labeling_app
+SQLite is fine for local single-user use. For multi-user / cloud deployments, set `DatabaseUrl=postgresql://user:password@host:5432/labeling` (psycopg2 / psycopg installs would need to be added to `requirements.txt`).
 
-### 6.3 Static Files & Uploads
+### 6.3 Static & Uploads
 
-In production:
-- Serve static files (CSS, JS) via a CDN or reverse proxy (nginx).
-- Store uploads on a dedicated volume or object storage (S3, Azure Blob).
-- Use Flask's `send_file()` with `X-Accel-Redirect` headers (nginx) or `X-Sendfile` (Apache) for efficient file serving.
+- Put a reverse proxy (nginx, Caddy) in front of gunicorn.
+- Serve `static/` directly from the proxy.
+- Move `uploads/` to a dedicated volume or object storage if scale grows.
 
-### 6.4 Environment Variables
+### 6.4 Authentication (out of scope, action required before public exposure)
 
-Example `.env` file (not versioned in Git):
-
-SECRET_KEY=your-production-secret-key-here
-DATABASE_URL=postgresql://user:password@db-host:5432/labeling_db
-UPLOAD_FOLDER=/mnt/uploads
-EXPORT_FOLDER=/mnt/exports
-FLASK_DEBUG=false
-
-Load via:
-export $(cat .env | xargs)
-python -m app
+This project does **not** ship with authentication. Before exposing the app on the public internet, add at minimum one of:
+- Flask-Login with a user table.
+- A reverse-proxy authentication gateway (oauth2-proxy, Authelia).
+- HTTP basic auth at the nginx layer (acceptable for internal tools only).
 
 ### 6.5 Logging & Monitoring
 
-In production, configure structured logging:
+Configure structured logging in production:
 
-import logging
+```python
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+```
 
-Monitor key metrics:
-- Upload success/failure rates.
-- Labeling duration trends.
-- Database table size (images grows with uploads).
-- API endpoint response times.
+Recommended dashboards:
+- Upload success/failure ratio.
+- 413 frequency (signals user education needed on file size).
+- Mean and tail of `labeling_duration_seconds` per session.
+- Database file size growth.

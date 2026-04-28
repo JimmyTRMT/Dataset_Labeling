@@ -7,12 +7,12 @@ body {
 }
 
 .preview-image {
-    max-height: 38.75rem; /* ~620px */
+    max-height: 38.75rem;
     object-fit: contain;
 }
 
 .thumb-image {
-    height: 5.625rem; /* ~90px */
+    height: 5.625rem;
     width: 100%;
     object-fit: cover;
 }
@@ -33,7 +33,7 @@ body {
 }
 
 .chart-wrapper {
-    min-height: 20rem; /* ~320px */
+    min-height: 20rem;
 }
 
 .project-navbar .nav-shell {
@@ -48,7 +48,7 @@ body {
 }
 
 .project-navbar .nav-logo {
-    height: 2.75rem; /* ~44px */
+    height: 2.75rem;
     width: auto;
 }
 

@@ -6,8 +6,6 @@ from ..models import ImageRecord, db
 from ..services.export_service import build_export_csv
 from ..services.image_service import persist_uploaded_images
 
-# API routes for upload, labeling, export, and deletion.
-
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
@@ -15,6 +13,7 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 def upload_images():
     files = request.files.getlist("images")
     session_name = request.form.get("session_name", "").strip() or f"Session {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+
     label_one = (
         request.form.get("label_option_1", "").strip()
         or request.form.get("label_one", "").strip()
@@ -25,21 +24,18 @@ def upload_images():
         or request.form.get("label_two", "").strip()
         or "labelTwo"
     )
-    
+
     labels_from_form = request.form.getlist("custom_labels")
     labels_from_form = [lbl.strip() for lbl in labels_from_form if lbl.strip()]
-    
+
     if not labels_from_form:
-        l1 = request.form.get("label_option_1", "").strip() or request.form.get("label_one", "").strip() or "labelOne"
-        l2 = request.form.get("label_option_2", "").strip() or request.form.get("label_two", "").strip() or "labelTwo"
-        labels_from_form = [l1, l2]
-        
+        labels_from_form = [label_one, label_two]
+
     custom_labels_json = json.dumps(labels_from_form)
-    
-    # Backward compatibility with required DB columns
+
     label_one_fallback = labels_from_form[0] if len(labels_from_form) > 0 else "labelOne"
     label_two_fallback = labels_from_form[1] if len(labels_from_form) > 1 else "labelTwo"
-    
+
     upload_mode = request.form.get("upload_mode", "new")
 
     existing_session_image = None
@@ -53,6 +49,7 @@ def upload_images():
             flash("Session not found. Use 'Create session' to create a new one.", "warning")
             return redirect(url_for("main.history"))
 
+        # Inherit labels from the existing session so old images stay consistent.
         label_one = existing_session_image.label_option_1
         label_two = existing_session_image.label_option_2
         label_one_fallback = existing_session_image.label_option_1
@@ -125,6 +122,7 @@ def assign_label(image_id: int):
 
     auto_advance = request.form.get("auto_advance", "1") == "1"
     session_name = request.form.get("session_name", "").strip()
+
     if not selected_label:
         flash("No label received.", "warning")
         return redirect(
@@ -144,11 +142,13 @@ def assign_label(image_id: int):
     db.session.commit()
 
     flash(f"Image {image.original_filename} labeled: {selected_label}", "success")
+
     next_query = ImageRecord.query.filter_by(status="unlabeled")
     if session_name:
         next_query = next_query.filter_by(session_name=session_name)
 
     next_unlabeled = next_query.order_by(ImageRecord.uploaded_at.asc()).first()
+
     if next_unlabeled and auto_advance:
         return redirect(
             url_for(
@@ -181,6 +181,7 @@ def assign_label(image_id: int):
 def export_csv():
     labeled_images = ImageRecord.query.filter_by(status="labeled").order_by(ImageRecord.id.asc()).all()
     export_format = request.args.get("format", "full").strip().lower()
+    
     if not labeled_images:
         flash("No labeled data to export.", "warning")
         return redirect(url_for("main.index"))
@@ -202,6 +203,7 @@ def export_csv_for_session(session_name: str):
         .order_by(ImageRecord.id.asc())
         .all()
     )
+    
     if not session_images:
         flash("No data found for this session.", "warning")
         return redirect(url_for("main.history"))
@@ -215,15 +217,10 @@ def export_csv_for_session(session_name: str):
     return send_file(export_path, as_attachment=True)
 
 
-@api_bp.post("/reset-session")
-def reset_session():
-    flash("Session archived. You can start a new session with different labels.", "success")
-    return redirect(url_for("main.history"))
-
-
 @api_bp.post("/delete-session/<path:session_name>")
 def delete_session(session_name: str):
     session_images = ImageRecord.query.filter_by(session_name=session_name).all()
+    
     if not session_images:
         flash("Session not found.", "warning")
         return redirect(url_for("main.history"))
@@ -287,6 +284,8 @@ def ensure_unique_session_name(base_name: str) -> str:
 
 
 def delete_image_file(image: ImageRecord) -> None:
+    # Walk both candidate paths because old records stored absolute paths
+    # while newer records may rely solely on stored_filename + UPLOAD_FOLDER.
     candidate_paths = []
     if image.file_path:
         candidate_paths.append(Path(image.file_path))

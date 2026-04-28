@@ -69,7 +69,7 @@ function submitWithVisualFeedback(button) {
         labelForm.submit();
     }, 140);
 }
-
+// Attach event listeners to dynamic label buttons
 const dynamicLabelButtons = document.querySelectorAll(".dynamic-label-btn");
 if (dynamicLabelButtons.length > 0) {
     dynamicLabelButtons.forEach(function (btn) {

@@ -1,14 +1,17 @@
 import logging
 from pathlib import Path
-
+from dotenv import load_dotenv
 from flask import Flask
+from flask_wtf.csrf import CSRFProtect
 from sqlalchemy import inspect, text
-
+load_dotenv()
 from .blueprints.api import api_bp
 from .blueprints.main import main_bp
 from .config import Config
 from .error_handlers import register_error_handlers
 from .models import db
+
+csrf = CSRFProtect()
 
 
 def create_app() -> Flask:
@@ -26,13 +29,18 @@ def create_app() -> Flask:
     export_dir.mkdir(exist_ok=True, parents=True)
 
     db.init_app(flask_app)
-
+    csrf.init_app(flask_app)
     with flask_app.app_context():
         db.create_all()
         ensure_schema_compatibility()
 
     if not flask_app.debug:
         logging.basicConfig(level=logging.INFO)
+        if flask_app.config["SECRET_KEY"] == Config.DEFAULT_SECRET_KEY:
+            raise RuntimeError(
+                "Refusing to start with the default SecretKey while debug is disabled. "
+                "Set a strong SecretKey in your environment (.env) before running in production."
+            )
 
     flask_app.register_blueprint(main_bp)
     flask_app.register_blueprint(api_bp)
@@ -42,7 +50,8 @@ def create_app() -> Flask:
 
 
 def ensure_schema_compatibility() -> None:
-    # Keep older local SQLite databases compatible with the current schema
+    # Adds columns that older local SQLite databases may be missing.
+    # Skips on other engines because ALTER TABLE syntax differs.
     if db.engine.dialect.name != "sqlite":
         return
 
@@ -50,7 +59,6 @@ def ensure_schema_compatibility() -> None:
     table_names = inspector.get_table_names()
     if "images" not in table_names:
         return
-
     existing_columns = {column["name"] for column in inspector.get_columns("images")}
     if "session_name" not in existing_columns:
         db.session.execute(text("ALTER TABLE images ADD COLUMN session_name VARCHAR(255) DEFAULT 'Default Session'"))

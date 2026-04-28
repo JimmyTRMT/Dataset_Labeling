@@ -1,16 +1,10 @@
-
-
 from datetime import datetime
-
 from flask_sqlalchemy import SQLAlchemy
-
-# Database models 
 
 db = SQLAlchemy()
 
 
 class ImageRecord(db.Model):
-    # One uploaded image and its labeling metadata.
     __tablename__ = "images"
 
     id = db.Column(db.Integer, primary_key=True)

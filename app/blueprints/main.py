@@ -1,11 +1,8 @@
 from datetime import datetime
-from pathlib import Path
-import json
-from flask import Blueprint, current_app, render_template, request, send_file
+from flask import Blueprint, current_app, render_template, request, send_from_directory
 from sqlalchemy import func
 from ..models import ImageRecord, db
-
-# Main page routes (labeling, history, dashboard, file serving)
+from ..utils.labels import parse_custom_labels
 
 main_bp = Blueprint("main", __name__)
 
@@ -27,16 +24,14 @@ def index():
     if unlabeled_image is None and unlabeled_images and auto_advance:
         unlabeled_image = unlabeled_images[0]
 
-    if unlabeled_image and unlabeled_image.last_viewed_at is None:
+    # Reset on every page load so refresh / tab-switch don't inflate the duration.
+    if unlabeled_image:
         unlabeled_image.last_viewed_at = datetime.utcnow()
         db.session.commit()
 
     labels = []
-    if unlabeled_image and unlabeled_image.custom_labels:
-        try:
-            labels = json.loads(unlabeled_image.custom_labels)
-        except Exception:
-            pass
+    if unlabeled_image:
+        labels = parse_custom_labels(unlabeled_image.custom_labels)
 
     if not unlabeled_image and active_session:
         session_reference = (
@@ -45,11 +40,7 @@ def index():
             .first()
         )
         if session_reference:
-            if session_reference.custom_labels:
-                try:
-                    labels = json.loads(session_reference.custom_labels)
-                except Exception:
-                    pass
+            labels = parse_custom_labels(session_reference.custom_labels)
 
     if not labels:
         label_one = unlabeled_image.label_option_1 if unlabeled_image else "Label 1"
@@ -101,12 +92,7 @@ def history():
             .first()
         )
         if reference:
-            custom_labels = []
-            if reference.custom_labels:
-                try:
-                    custom_labels = json.loads(reference.custom_labels)
-                except Exception:
-                    pass
+            custom_labels = parse_custom_labels(reference.custom_labels)
             if not custom_labels:
                 custom_labels = [reference.label_option_1, reference.label_option_2]
 
@@ -135,15 +121,12 @@ def history():
             .first()
         )
     suggested_source = selected_reference or latest_record
-    
+
     suggested_labels = []
-    if suggested_source and suggested_source.custom_labels:
-        try:
-            suggested_labels = json.loads(suggested_source.custom_labels)
-        except Exception:
-            pass
-    if not suggested_labels and suggested_source:
-        suggested_labels = [suggested_source.label_option_1, suggested_source.label_option_2]
+    if suggested_source:
+        suggested_labels = parse_custom_labels(suggested_source.custom_labels)
+        if not suggested_labels:
+            suggested_labels = [suggested_source.label_option_1, suggested_source.label_option_2]
 
     return render_template(
         "history.html",
@@ -205,4 +188,5 @@ def dashboard():
 
 @main_bp.get("/uploads/<path:filename>")
 def serve_upload(filename: str):
-    return send_file(Path(current_app.config["UPLOAD_FOLDER"]) / filename)
+    # send_from_directory uses safe_join under the hood and blocks path traversal
+    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
