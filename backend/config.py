@@ -1,20 +1,20 @@
 import os
 from pathlib import Path
 
-
+# Config class centralizes all configuration settings for the Flask application, reading from environment variables with sensible defaults and ensuring paths are absolute and anchored to the project root.
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
-
+# _split_labels takes a comma-separated string of labels from the environment and returns a list of cleaned labels, falling back to a default list if the input is empty or None.
 def _split_labels(value: str | None, default: list[str]) -> list[str]:
     if not value:
         return default
     items = [piece.strip() for piece in value.split(",")]
     return [item for item in items if item] or default
 
-
+# _anchor_sqlite_url ensures that a relative SQLite database URL is anchored to the project root for consistent behavior across environments, while leaving other database URLs unchanged.
 def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     # Flask-SQLAlchemy resolves relative SQLite paths against app.instance_path,
     # not the project root. Pin them to the project root for predictable behavior.
@@ -27,7 +27,7 @@ def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     absolute_path = (project_root / path_part).resolve().as_posix()
     return f"sqlite:///{absolute_path}"
 
-
+# anchor_folder normalizes a folder path from the environment, ensuring it's absolute and anchored to the project root if it was relative.
 def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> str:
     # Werkzeug's send_file rejects relative paths, so normalise to absolute.
     chosen = raw_value or default
@@ -36,7 +36,7 @@ def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> s
         path = (project_root / chosen).resolve()
     return str(path)
 
-
+# Config class centralizes all configuration settings for the Flask application, reading from environment variables with sensible defaults and ensuring paths are absolute and anchored 
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DEFAULT_SECRET_KEY = "dev-change-me-secret"

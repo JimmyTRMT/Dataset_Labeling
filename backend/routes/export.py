@@ -15,7 +15,7 @@ from backend.services.export_service import build_csv_export, build_json_export
 
 export_bp = Blueprint("export", __name__)
 
-
+# Export page shows export options and dataset statistics
 @export_bp.get("/export")
 def export_page():
     total = ImageRecord.query.count()
@@ -26,7 +26,7 @@ def export_page():
         labeled_count=labeled,
     )
 
-
+# Export routes
 @export_bp.get("/export/csv")
 def export_csv():
     export_format = request.args.get("format", "full").strip().lower()
