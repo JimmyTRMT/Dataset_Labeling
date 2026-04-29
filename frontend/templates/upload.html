@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% set active_page = 'upload' %}
+{% block title %}Upload - Dataset Labeling Tool{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="h4 mb-3">Upload Image</h1>
+                <form method="POST" action="{{ url_for('upload.upload_images') }}" enctype="multipart/form-data" id="upload-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-3">
+                        <label for="images" class="form-label">Image files</label>
+                        <div class="input-group">
+                            <button class="btn btn-outline-secondary" type="button" id="choose-files-btn">Choose File</button>
+                            <input id="selected-files-text" type="text" class="form-control" value="No file selected" readonly aria-live="polite">
+                        </div>
+                        <input id="images" name="images" type="file" class="d-none" accept="image/*" multiple required>
+                        <div class="form-text">Allowed: PNG, JPG, JPEG, BMP, GIF, TIF, WEBP. Max 16 MB per upload.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="contributor" class="form-label">Contributor (optional)</label>
+                        <input id="contributor" name="contributor" type="text" class="form-control" placeholder="Your name">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes (optional)</label>
+                        <textarea id="notes" name="notes" class="form-control" rows="2" placeholder="Any notes about this batch"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">Upload</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+{% endblock %}

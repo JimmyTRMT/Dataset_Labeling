@@ -5,13 +5,13 @@ __pycache__/
 
 # Database
 instance/
-dataset.db
+database/*.db
 
 # Project specific
-uploads/*
-!uploads/.gitkeep
-exports/*
-!exports/.gitkeep
+data/images/*
+!data/images/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
 
 # IDE
 .vscode/

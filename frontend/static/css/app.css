@@ -1,0 +1,24 @@
+body {
+    min-height: 100vh;
+}
+
+.preview-image {
+    max-height: 38.75rem;
+    object-fit: contain;
+}
+
+.thumb-image {
+    height: 4rem;
+    width: 4rem;
+    object-fit: cover;
+}
+
+.label-submit-pulse {
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.label-option-btn.selected {
+    color: #fff;
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+}

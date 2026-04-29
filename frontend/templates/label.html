@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set active_page = 'label' %}
+{% block title %}Label - Dataset Labeling Tool{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5">Progress</h2>
+                <p class="mb-2"><strong>{{ labeled_count }}/{{ total_count }}</strong> labeled images</p>
+                {% set progress = (labeled_count / total_count * 100) | round | int if total_count > 0 else 0 %}
+                <div class="progress mb-3" role="progressbar" aria-label="Labeling progress" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar" style="width: {{ progress }}%">{{ progress }}%</div>
+                </div>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Unlabeled</span>
+                        <strong>{{ unlabeled_count }}</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Labeled</span>
+                        <strong>{{ labeled_count }}</strong>
+                    </li>
+                </ul>
+                <a href="{{ url_for('label.dataset_browser') }}" class="btn btn-outline-primary w-100 mt-3">View Dataset</a>
+                <a href="{{ url_for('export.export_page') }}" class="btn btn-outline-success w-100 mt-2">Export Data</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="h4 mb-3">Labeling</h1>
+
+                {% if current_image %}
+                    <p class="text-muted mb-1">Image ID: <strong>{{ current_image.id }}</strong></p>
+                    <p class="small text-muted">{{ current_image.original_filename }}{% if current_image.contributor %} - by {{ current_image.contributor }}{% endif %}</p>
+
+                    <div class="text-center mb-3">
+                        <img src="{{ url_for('upload.serve_image', filename=current_image.stored_filename) }}"
+                             id="main-image"
+                             class="img-fluid rounded border preview-image"
+                             alt="Image to label">
+                    </div>
+
+                    <form method="POST" action="{{ url_for('label.assign_label', image_id=current_image.id) }}" id="label-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="label" id="selected-label-input" value="">
+
+                        <p class="fw-semibold mb-2">Select Label:</p>
+                        <div class="d-flex flex-wrap gap-2 mb-3" id="label-options">
+                            {% for lbl in available_labels %}
+                                <button type="button" class="btn btn-outline-primary flex-fill label-option-btn" data-label="{{ lbl }}">
+                                    {{ lbl }}
+                                    {% if loop.index <= 9 %}
+                                        <span class="badge bg-secondary ms-2">{{ loop.index }}</span>
+                                    {% endif %}
+                                </button>
+                            {% endfor %}
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-fill" id="save-label-btn" disabled>Save Label</button>
+                            {% if unlabeled_images|length > 1 %}
+                                {% set next_image = unlabeled_images|rejectattr('id', 'equalto', current_image.id)|list|first %}
+                                {% if next_image %}
+                                    <a href="{{ url_for('label.label_page', image_id=next_image.id) }}" class="btn btn-outline-secondary">Skip</a>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </form>
+
+                    <form method="POST" action="{{ url_for('label.delete_image', image_id=current_image.id) }}" class="mt-2" id="delete-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-danger w-100">Delete this image</button>
+                    </form>
+
+                    {% if unlabeled_images|length > 1 %}
+                        <hr>
+                        <h3 class="h6">Pending images</h3>
+                        <div class="row row-cols-3 row-cols-md-4 g-2">
+                            {% for image in unlabeled_images %}
+                                <div class="col">
+                                    <a href="{{ url_for('label.label_page', image_id=image.id) }}" class="d-block border rounded p-1 {% if image.id == current_image.id %}border-primary{% endif %}">
+                                        <img src="{{ url_for('upload.serve_image', filename=image.stored_filename) }}"
+                                             class="img-fluid rounded thumb-image"
+                                             alt="{{ image.original_filename }}">
+                                    </a>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% else %}
+                    <div class="alert alert-success mb-0">
+                        <p class="mb-2">All images have been labeled.</p>
+                        <a href="{{ url_for('upload.upload_page') }}" class="btn btn-primary me-2">Upload more</a>
+                        <a href="{{ url_for('export.export_page') }}" class="btn btn-success">Export Dataset</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/labeling.js') }}"></script>
+{% endblock %}

@@ -1,149 +1,153 @@
-# Image Labeling Platform (Flask)
+# Dataset Labeling Tool
 
-Web platform to build labeled image datasets for AI research workflows.
-It supports session-based annotation, keyboard-driven labeling, and export-ready CSV files.
+A simple web application that lets researchers upload medical or waste images, label them for AI training, and export the labeled dataset as CSV or JSON.
 
-## Project Overview
+The system supports three research projects with the same tool:
 
-This application helps researchers and engineers:
-- Upload image batches (up to 16 MB per request).
-- Create labeling sessions with N custom labels (not just two).
-- Annotate quickly with UI buttons or keyboard shortcuts (keys `1`-`9`).
-- Track progress and per-image timing on a dashboard.
-- Export datasets in two formats: full metadata or AI-ready (`image_path`, `label`).
+- Diabetic retinopathy dataset preparation
+- Telemedicine image data collection
+- Waste sorting image dataset
 
-## Tech Stack
+## Feature list
 
-- Backend: Flask 3 + Flask-SQLAlchemy + Flask-WTF (CSRF)
-- Database: SQLite (default), swap to PostgreSQL via `DatabaseUrl`
-- Frontend: Bootstrap 5, vanilla JavaScript, Chart.js (CDN)
+1. **Image Upload** - upload one or many images with an optional contributor name and notes (16 MB cap per request).
+2. **Image Labeling** - assign a label from a configurable list (default: `No DR / Mild / Moderate / Severe`); keyboard shortcuts `1`-`9`.
+3. **Dataset Browser** - table view with filename, contributor, label, and upload date; filter All / Labeled / Unlabeled.
+4. **Dataset Export** - download labeled data as CSV or JSON, in two layouts:
+   - Full metadata (id, filenames, contributor, notes, label, status, timestamps)
+   - AI-ready (`image_path`, `label`) for direct ingest by PyTorch / Keras / pandas
 
-## Project Structure
+## Tech stack
+
+- **Backend**: Python 3.10+, Flask 3, Flask-SQLAlchemy, Flask-WTF (CSRF)
+- **Frontend**: Bootstrap 5, vanilla JavaScript
+- **Database**: SQLite by default, swap to PostgreSQL via `DATABASE_URL`
+- **Storage**: local folder (`data/images/`)
+
+## Project structure
 
 ```
-ModifV1_0_1_Correction/
-  app/
-    __init__.py            # Application factory + CSRF + schema migrator
-    __main__.py            # Entry point: python -m app
-    config.py              # Config class (env-driven, PEP 8 names)
-    error_handlers.py      # 404 / 413 / 500
-    models.py              # ImageRecord ORM model
-    blueprints/
-      api.py               # POST routes: upload, label, delete, export
-      main.py              # GET routes: index, history, dashboard, uploads
-    services/
-      export_service.py    # CSV builder (full + AI formats, UTF-8 BOM)
-      image_service.py     # Upload validation + persistence
-    utils/
-      labels.py            # parse_custom_labels helper
-  templates/               # Jinja2 templates (CSRF tokens included)
-  static/
-    css/app.css
-    js/                    # labeling.js, history.js, charts.js
-  scripts/seed_demo_data.py
-  uploads/                 # Stored images (gitignored)
-  exports/                 # Generated CSV (gitignored)
-  .env.example             # Template for local secrets
-  requirements.txt         # 7 direct dependencies
+dataset-labeling-tool/
+├── backend/
+│   ├── app.py                Flask entry point
+│   ├── routes/
+│   │   ├── upload.py
+│   │   ├── label.py
+│   │   └── export.py
+│   ├── models/
+│   │   └── database.py
+│   ├── services/
+│   │   ├── image_service.py
+│   │   └── export_service.py
+│   └── config.py
+├── frontend/
+│   ├── templates/            index.html, upload.html, label.html, dashboard.html, export.html, errors/
+│   └── static/               css/, js/, img/
+├── database/
+│   └── schema.sql            Reference SQLite schema (DB itself is created at runtime)
+├── data/
+│   ├── images/               Uploaded images (gitignored)
+│   └── exports/              Generated CSV / JSON (gitignored)
+├── docs/
+│   ├── architecture.md
+│   ├── setup.md
+│   └── screenshots/
+├── requirements.txt
+├── README.md
+├── .env.example
+└── .gitignore
 ```
 
-## Setup
+## Setup steps
 
-### 1) Virtual environment (optional but recommended)
+### 1. Create a virtual environment (recommended)
 
+Windows:
 ```
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1     # Windows PowerShell
-source .venv/bin/activate         # Linux/macOS
+.\.venv\Scripts\Activate.ps1
 ```
 
-### 2) Install dependencies
+Linux / macOS:
+```
+python -m venv .venv
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
 
 ```
 pip install -r requirements.txt
 ```
 
-### 3) Create your local `.env`
-
-Copy `.env.example` to `.env`, then generate a strong secret:
+### 3. Create `.env`
 
 ```
+cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Paste the output as the `SecretKey` value in `.env`.
+Paste the generated string as `SECRET_KEY` in `.env`. The app **refuses to start** in production mode if `SECRET_KEY` is the default value.
 
-The application **refuses to start in production mode** (`FlaskDebug=false`) if `SecretKey` is left at its default value.
+### 4. (Optional) Customize the label list
 
-### 4) Run
+In `.env`:
+```
+AVAILABLE_LABELS=No DR,Mild,Moderate,Severe
+```
+or, for waste sorting:
+```
+AVAILABLE_LABELS=Plastic,Paper,Metal,Organic
+```
+
+## How to run
+
+From the project root:
 
 ```
-python -m app
+python -m backend
 ```
 
-Open http://127.0.0.1:5000.
+Then open http://127.0.0.1:5000.
 
-## Workflow
-
-### Sessions
-
-A session groups uploaded images and a list of custom labels. From the History page you can:
-- Create a new session with custom labels.
-- Append images to an existing session (labels are inherited).
-- Delete a session and all its files.
-
-### Labeling
-
-- Keys `1`-`9` are mapped to the first nine labels of the session. Labels 10+ have no shortcut.
-- Auto-advance toggle (persisted in `localStorage`) jumps to the next unlabeled image after each click.
-- Per-image timing resets on every page load to avoid skewed statistics from refreshes or tab switches.
-
-### Exports
-
-Two formats, both UTF-8 with BOM (Excel-friendly, pandas-friendly):
-
-| Format | Columns | Use case |
-|--------|---------|----------|
-| Full | id, original_filename, stored_filename, session_name, label_option_1, label_option_2, custom_labels, uploaded_at, labeled_at, label, status | Audit, traceability |
-| AI | image_path, label | Direct ingest by PyTorch / Keras / HuggingFace |
-
-The AI format includes the `uploads/` prefix so `Image.open(row["image_path"])` works directly.
-
-## Dashboard
-
-- Label distribution (pie)
-- Annotation pace per day (bar)
-- Mean time-to-label (seconds)
-
-## Demo Data
-
+For production:
 ```
-python scripts/seed_demo_data.py
-python scripts/seed_demo_data.py --count 10 --reset
+gunicorn "backend.app:app" -b 0.0.0.0:8000 -w 4
 ```
+
+## Usage
+
+1. **Upload** images on `/upload` (or click *Upload Image* on the home page).
+2. **Label** them on `/label` - click the matching label or press its number key.
+3. **Browse** and filter the dataset on `/dataset`.
+4. **Export** as CSV or JSON on `/export`.
 
 ## Configuration
 
-Environment variables (both `CamelCase` and `UPPER_SNAKE_CASE` are accepted):
+Environment variables (both `CamelCase` and `UPPER_SNAKE_CASE` accepted):
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `SecretKey` / `SECRET_KEY` | `dev-change-me-secret` | **Mandatory in production** |
-| `DatabaseUrl` / `DATABASE_URL` | `sqlite:///dataset.db` | Any SQLAlchemy URL |
-| `UploadFolder` / `UPLOAD_FOLDER` | `./uploads` | |
-| `ExportFolder` / `EXPORT_FOLDER` | `./exports` | |
-| `FlaskDebug` / `FLASK_DEBUG` | `false` | `true`/`1`/`yes`/`on` to enable |
+| Variable               | Default                         | Notes                                |
+|------------------------|---------------------------------|--------------------------------------|
+| `SECRET_KEY`           | `dev-change-me-secret`          | Mandatory in production              |
+| `DATABASE_URL`         | `sqlite:///database/dataset.db` | Any SQLAlchemy URL                   |
+| `UPLOAD_FOLDER`        | `./data/images`                 |                                      |
+| `EXPORT_FOLDER`        | `./data/exports`                |                                      |
+| `AVAILABLE_LABELS`     | `No DR,Mild,Moderate,Severe`    | Comma-separated list                 |
+| `FLASK_DEBUG`          | `false`                         | `true` / `1` / `yes` / `on`          |
 
-`MAX_CONTENT_LENGTH` is hardcoded to 16 MB. Edit `app/config.py` to change it.
+`MAX_CONTENT_LENGTH` is hardcoded to 16 MB. Edit `backend/config.py` to change.
 
 ## Security
 
-- CSRF protection enabled on every POST form (Flask-WTF).
-- Path traversal blocked via `send_from_directory` on `/uploads/<filename>`.
-- File extension whitelist on uploads (PNG/JPG/BMP/GIF/TIF/WEBP).
-- `secure_filename` + UUID-based stored names.
-- `.env` is gitignored. `.env.example` is the only tracked template.
+- CSRF protection on every POST form (Flask-WTF).
+- Path traversal blocked by `send_from_directory` (Werkzeug `safe_join`).
+- File extension whitelist on uploads (PNG, JPG, JPEG, BMP, GIF, TIF, TIFF, WEBP).
+- `secure_filename` + timestamp + UUID for stored names.
+- `.env` is gitignored; `.env.example` is the only tracked template.
+- The app does **not** include user authentication. Do not expose it on the public internet without a login layer.
 
-This project does **not** include user authentication. Do not expose it on the public internet without adding a login layer (Flask-Login or a reverse-proxy auth gateway).
+## Documentation
 
-For deeper internals, see `TECHNICAL_GUIDE.md`.
+- [`docs/setup.md`](docs/setup.md) - detailed installation and troubleshooting
+- [`docs/architecture.md`](docs/architecture.md) - layers, schema, request flow, security
+- [`database/schema.sql`](database/schema.sql) - reference SQL schema

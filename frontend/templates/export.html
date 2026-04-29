@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set active_page = 'export' %}
+{% block title %}Export - Dataset Labeling Tool{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="h4 mb-3">Export Dataset</h1>
+
+                <ul class="list-group list-group-flush mb-4">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Total Images</span>
+                        <strong>{{ total_count }}</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Labeled (exportable)</span>
+                        <strong class="text-success">{{ labeled_count }}</strong>
+                    </li>
+                </ul>
+
+                {% if labeled_count == 0 %}
+                    <div class="alert alert-warning">No labeled images to export yet.</div>
+                {% endif %}
+
+                <h2 class="h6 text-uppercase text-muted">CSV exports</h2>
+                <div class="d-grid gap-2 mb-4">
+                    <a href="{{ url_for('export.export_csv', format='full') }}" class="btn btn-outline-success {% if labeled_count == 0 %}disabled{% endif %}">Export as CSV (full metadata)</a>
+                    <a href="{{ url_for('export.export_csv', format='ai') }}" class="btn btn-outline-success {% if labeled_count == 0 %}disabled{% endif %}">Export as CSV (AI training: image_path, label)</a>
+                </div>
+
+                <h2 class="h6 text-uppercase text-muted">JSON exports</h2>
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('export.export_json', format='full') }}" class="btn btn-outline-primary {% if labeled_count == 0 %}disabled{% endif %}">Export as JSON (full metadata)</a>
+                    <a href="{{ url_for('export.export_json', format='ai') }}" class="btn btn-outline-primary {% if labeled_count == 0 %}disabled{% endif %}">Export as JSON (AI training: image_path, label)</a>
+                </div>
+
+                <p class="form-text mt-3 mb-0">
+                    CSV exports use UTF-8 with BOM for Excel compatibility.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

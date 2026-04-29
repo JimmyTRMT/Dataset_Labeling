@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set active_page = 'home' %}
+{% block title %}Home - Dataset Labeling Tool{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card shadow-sm mb-4">
+            <div class="card-body text-center p-4">
+                <h1 class="h3 mb-3">Dataset Labeling Tool</h1>
+                <p class="text-muted mb-4">Upload, label, browse and export image datasets for AI training.</p>
+
+                <div class="d-flex flex-wrap justify-content-center gap-3 mb-3">
+                    <a href="{{ url_for('upload.upload_page') }}" class="btn btn-primary btn-lg">Upload Image</a>
+                    <a href="{{ url_for('label.dataset_browser') }}" class="btn btn-outline-primary btn-lg">View Dataset</a>
+                    <a href="{{ url_for('export.export_page') }}" class="btn btn-outline-success btn-lg">Export Data</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h2 class="h5 mb-3">Summary</h2>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Total Images</span>
+                        <strong>{{ total_count }}</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Labeled</span>
+                        <strong class="text-success">{{ labeled_count }}</strong>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>Unlabeled</span>
+                        <strong class="text-warning">{{ unlabeled_count }}</strong>
+                    </li>
+                </ul>
+
+                {% if unlabeled_count > 0 %}
+                    <a href="{{ url_for('label.label_page') }}" class="btn btn-success w-100 mt-3">Continue Labeling</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
