@@ -811,21 +811,3 @@ Upload size cap        16 MB per request
 Allowed extensions     PNG, JPG, JPEG, BMP, GIF, TIF, TIFF, WEBP
 Keyboard shortcuts     1-9 select label, Enter submits
 ```
-
-## Appendix B — Why some things are the way they are
-
-**Why is `dashboard.html` the dataset browser, not a chart page?**
-The original spec listed four templates and used the names interchangeably. The "Dataset Browser" mockup matched what would normally be called a dashboard. Sticking to the requested filename (`dashboard.html`) keeps the layout exactly as specified.
-
-**Why store `original_filename` *and* `stored_filename`?**
-- `original_filename` is what we show users (`cat.jpg`).
-- `stored_filename` is what we save to disk (`20260428093015_a1b2c3d4.jpg`) to avoid collisions.
-
-**Why UTF-8 with BOM for CSV but no BOM for JSON?**
-Excel needs the BOM to detect UTF-8 in CSV files (otherwise accented characters break). JSON parsers reject BOMs, so the JSON export omits it.
-
-**Why not commit `database/dataset.db`?**
-The DB is regenerated from the model on first run. Committing it would mean every reviewer carries leftover test data, and any schema change would need a manual migration of the committed file. Letting SQLAlchemy build it fresh is simpler and reproducible.
-
-**Why is there no migration tool (Alembic)?**
-At this scope, `db.create_all()` plus a fresh DB on schema change is enough. Add Alembic when the schema starts evolving in production.
