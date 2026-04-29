@@ -15,12 +15,12 @@ from backend.services.image_service import persist_uploaded_images
 
 upload_bp = Blueprint("upload", __name__)
 
-
+# Upload page allows users to upload images with optional contributor name and notes
 @upload_bp.get("/upload")
 def upload_page():
     return render_template("upload.html")
 
-
+# Handle image uploads, save files, create database records, and redirect to labeling page
 @upload_bp.post("/upload")
 def upload_images():
     files = request.files.getlist("images")
@@ -55,7 +55,7 @@ def upload_images():
         flash("No image selected.", "warning")
     return redirect(url_for("upload.upload_page"))
 
-
+# Serve uploaded images for display in the labeling interface
 @upload_bp.get("/images/<path:filename>")
 def serve_image(filename: str):
     # send_from_directory uses safe_join under the hood and blocks path traversal.

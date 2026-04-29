@@ -4,7 +4,7 @@ const saveButton = document.getElementById("save-label-btn");
 const labelForm = document.getElementById("label-form");
 
 let selectedButton = null;
-
+// selectLabel handles the logic for selecting a label button, updating the hidden input with the selected label, and enabling the save button.
 function selectLabel(button) {
     if (!button) return;
     if (selectedButton) {
@@ -19,7 +19,7 @@ function selectLabel(button) {
         saveButton.disabled = false;
     }
 }
-
+// add event listeners to each label button
 labelButtons.forEach(function (button) {
     button.addEventListener("click", function () {
         selectLabel(button);
@@ -33,7 +33,7 @@ if (labelForm) {
         }
     });
 }
-
+// add a keydown event listener to the document to handle keyboard shortcuts for label selection and form submission, while ignoring inputs when focus is on form fields.
 document.addEventListener("keydown", function (event) {
     const focusedTag = document.activeElement ? document.activeElement.tagName : "";
     if (["INPUT", "TEXTAREA", "SELECT"].includes(focusedTag)) {

@@ -18,7 +18,7 @@ from backend.routes.export import export_bp
 
 csrf = CSRFProtect()
 
-
+# create_app initializes the Flask application, configures it, sets up the database and CSRF protection, registers routes and error handlers, and returns the app instance.
 def create_app() -> Flask:
     project_root = Config.PROJECT_ROOT
     flask_app = Flask(
@@ -55,7 +55,7 @@ def create_app() -> Flask:
 
     return flask_app
 
-
+# register_core_routes defines the main page route that shows dataset statistics and links to other pages.
 def register_core_routes(flask_app: Flask) -> None:
     @flask_app.get("/")
     def home():
@@ -68,7 +68,7 @@ def register_core_routes(flask_app: Flask) -> None:
             unlabeled_count=total_count - labeled_count,
         )
 
-
+# register_error_handlers sets up custom error pages for common HTTP errors and handles large upload attempts gracefully.
 def register_error_handlers(flask_app: Flask) -> None:
     @flask_app.errorhandler(404)
     def not_found(_error):

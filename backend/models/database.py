@@ -5,7 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
-
+# ImageRecord represents an uploaded image and its associated metadata, including labeling status and timestamps
 class ImageRecord(db.Model):
     __tablename__ = "images"
 
@@ -23,6 +23,7 @@ class ImageRecord(db.Model):
     last_viewed_at = db.Column(db.DateTime, nullable=True)
     labeling_duration_seconds = db.Column(db.Float, nullable=True)
 
+# mark_as_labeled updates the record to reflect that it has been labeled, setting the label, status, and timestamps accordingly
     def mark_as_labeled(self, label_value: str, duration_seconds: float | None = None) -> None:
         self.label = label_value
         self.status = "labeled"
@@ -30,6 +31,7 @@ class ImageRecord(db.Model):
         self.labeling_duration_seconds = duration_seconds
         self.last_viewed_at = None
 
+# to_export_row returns a dictionary representation of the record suitable for export
     def to_export_row(self) -> dict:
         return {
             "id": self.id,

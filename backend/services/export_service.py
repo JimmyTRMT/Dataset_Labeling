@@ -25,7 +25,7 @@ EXPORT_FIELDS_AI = [
     "label",
 ]
 
-
+# build_csv_export generates a CSV file from the labeled images, with options for full or AI-specific formats
 def build_csv_export(
     images: Sequence[ImageRecord],
     export_folder: str,
@@ -37,7 +37,7 @@ def build_csv_export(
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     export_path = Path(export_folder) / f"dataset_{normalized_format}_{timestamp}.csv"
 
-    # utf-8-sig writes a BOM so Excel on Windows opens accented or non-Latin text correctly.
+    # utf-8-sig writes a BOM so Excel on Windows opens accented or non-Latin text correctly
     with export_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=selected_fields)
         writer.writeheader()
@@ -50,7 +50,7 @@ def build_csv_export(
 
     return export_path
 
-
+# Same but in JSON format, with options for full or AI-specific payloads
 def build_json_export(
     images: Sequence[ImageRecord],
     export_folder: str,

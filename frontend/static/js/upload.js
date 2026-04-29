@@ -2,6 +2,7 @@ const fileInput = document.getElementById("images");
 const chooseFilesButton = document.getElementById("choose-files-btn");
 const selectedFilesText = document.getElementById("selected-files-text");
 
+// applyEnglishValidation adds custom validation messages in English for required input fields, including file inputs, and clears the message on user input.
 function applyEnglishValidation(input) {
     const fileMessage = "Please choose at least one file.";
     const fillMessage = "Please fill in this field.";
@@ -22,7 +23,7 @@ if (chooseFilesButton && fileInput) {
         fileInput.click();
     });
 }
-
+// add a change event listener to the file input to update the displayed text with the selected file names or count, providing feedback to the user about their selection.
 if (fileInput && selectedFilesText) {
     fileInput.addEventListener("change", function () {
         const total = fileInput.files ? fileInput.files.length : 0;

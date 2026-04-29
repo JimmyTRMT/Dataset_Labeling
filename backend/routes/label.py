@@ -16,7 +16,7 @@ from backend.services.image_service import delete_image_file
 
 label_bp = Blueprint("label", __name__)
 
-
+# label page shows the current image to label and dataset statistics
 @label_bp.get("/label")
 def label_page():
     selected_id = request.args.get("image_id", type=int)
@@ -41,6 +41,7 @@ def label_page():
     total_count = ImageRecord.query.count()
     labeled_count = ImageRecord.query.filter_by(status="labeled").count()
 
+# Render the labeling page with the current image, available labels, and dataset statistics
     return render_template(
         "label.html",
         current_image=current_image,
@@ -51,7 +52,7 @@ def label_page():
         unlabeled_count=total_count - labeled_count,
     )
 
-
+# Assign a label to the current image
 @label_bp.post("/label/<int:image_id>")
 def assign_label(image_id: int):
     selected_label = ""
@@ -76,6 +77,7 @@ def assign_label(image_id: int):
 
     flash(f"Image '{image.original_filename}' labeled: {selected_label}", "success")
 
+# After labeling, redirect to the next unlabeled image or back to the dataset browser if done
     next_unlabeled = (
         ImageRecord.query.filter_by(status="unlabeled")
         .order_by(ImageRecord.uploaded_at.asc())
@@ -87,7 +89,7 @@ def assign_label(image_id: int):
     flash("All images have been labeled.", "success")
     return redirect(url_for("label.dataset_browser"))
 
-
+# Delete an image and its record from the database
 @label_bp.post("/label/<int:image_id>/delete")
 def delete_image(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
@@ -98,7 +100,7 @@ def delete_image(image_id: int):
     flash("Image deleted.", "success")
     return redirect(url_for("label.dataset_browser"))
 
-
+# dataset_browser shows all images with filtering options
 @label_bp.get("/dataset")
 def dataset_browser():
     label_filter = request.args.get("filter", "all").strip().lower()

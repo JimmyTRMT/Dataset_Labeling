@@ -11,11 +11,11 @@ from backend.models.database import ImageRecord
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp"}
 
-
+# is_allowed_file checks if the uploaded file has an allowed image extension
 def is_allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
+#persist_uploaded_images processes uploaded files, saves them to disk with unique names, and creates corresponding ImageRecord instances. It returns the list of saved records and a flag indicating if any invalid files were detected.
 def persist_uploaded_images(
     files: Iterable[FileStorage],
     upload_folder: str,
@@ -52,7 +52,7 @@ def persist_uploaded_images(
 
     return saved_records, invalid_detected
 
-
+# delete_image_file removes the image file from disk based on the stored filename in the ImageRecord.
 def delete_image_file(image: ImageRecord, upload_folder: str) -> None:
     target = Path(upload_folder) / image.stored_filename
     try:
