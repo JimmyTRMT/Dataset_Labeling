@@ -15,10 +15,13 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp"}
 def is_allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-#persist_uploaded_images processes uploaded files, saves them to disk with unique names, and creates corresponding ImageRecord instances. It returns the list of saved records and a flag indicating if any invalid files were detected.
+# persist_uploaded_images saves each upload to disk with a unique name and
+# builds the matching ImageRecord. The project tag travels with every row so
+# downstream code can filter cleanly by project.
 def persist_uploaded_images(
     files: Iterable[FileStorage],
     upload_folder: str,
+    project: str,
     contributor: str | None = None,
     notes: str | None = None,
 ) -> tuple[list[ImageRecord], bool]:
@@ -44,6 +47,7 @@ def persist_uploaded_images(
             ImageRecord(
                 original_filename=original_name,
                 stored_filename=unique_name,
+                project=project,
                 contributor=(contributor or None),
                 notes=(notes or None),
                 status="unlabeled",

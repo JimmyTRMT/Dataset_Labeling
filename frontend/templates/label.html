@@ -35,7 +35,12 @@
                 <h1 class="h4 mb-3">Labeling</h1>
 
                 {% if current_image %}
-                    <p class="text-muted mb-1">Image ID: <strong>{{ current_image.id }}</strong></p>
+                    {# Showing the project name above the image makes it
+                       obvious which label set is being applied right now. #}
+                    <p class="text-muted mb-1">
+                        Image ID: <strong>{{ current_image.id }}</strong>
+                        &middot; Project: <span class="badge bg-info text-dark">{{ current_image.project }}</span>
+                    </p>
                     <p class="small text-muted">{{ current_image.original_filename }}{% if current_image.contributor %} - by {{ current_image.contributor }}{% endif %}</p>
 
                     <div class="text-center mb-3">

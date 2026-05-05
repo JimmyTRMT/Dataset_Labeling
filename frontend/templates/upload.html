@@ -11,6 +11,23 @@
                 <form method="POST" action="{{ url_for('upload.upload_images') }}" enctype="multipart/form-data" id="upload-form">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+                    {# Project selection is mandatory: the radios share the
+                       `required` attribute so the browser blocks submission
+                       until one is picked. #}
+                    <div class="mb-3">
+                        <label class="form-label">Project</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            {% for project_id in project_ids %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="project"
+                                           id="project-{{ project_id }}" value="{{ project_id }}" required>
+                                    <label class="form-check-label" for="project-{{ project_id }}">{{ project_id }}</label>
+                                </div>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text">Required - choose the project this batch belongs to.</div>
+                    </div>
+
                     <div class="mb-3">
                         <label for="images" class="form-label">Image files</label>
                         <div class="input-group">

@@ -16,7 +16,8 @@ from backend.services.image_service import delete_image_file
 
 label_bp = Blueprint("label", __name__)
 
-# label page shows the current image to label and dataset statistics
+
+# Label page shows the current image and the buttons matching its project.
 @label_bp.get("/label")
 def label_page():
     selected_id = request.args.get("image_id", type=int)
@@ -38,21 +39,29 @@ def label_page():
         current_image.last_viewed_at = datetime.utcnow()
         db.session.commit()
 
+    # Pick the right label set for the current image's project. If somehow
+    # the project is unknown (legacy row), we fall back to an empty list.
+    project_labels = current_app.config["PROJECT_LABELS"]
+    available_labels: list[str] = []
+    if current_image:
+        available_labels = project_labels.get(current_image.project, [])
+
     total_count = ImageRecord.query.count()
     labeled_count = ImageRecord.query.filter_by(status="labeled").count()
 
-# Render the labeling page with the current image, available labels, and dataset statistics
     return render_template(
         "label.html",
         current_image=current_image,
         unlabeled_images=unlabeled_images,
-        available_labels=current_app.config["AVAILABLE_LABELS"],
+        available_labels=available_labels,
         total_count=total_count,
         labeled_count=labeled_count,
         unlabeled_count=total_count - labeled_count,
     )
 
-# Assign a label to the current image
+
+# Assign a label to the current image and jump to the next unlabeled one in
+# the same project, so the user can stay focused on one project at a time.
 @label_bp.post("/label/<int:image_id>")
 def assign_label(image_id: int):
     selected_label = ""
@@ -77,19 +86,28 @@ def assign_label(image_id: int):
 
     flash(f"Image '{image.original_filename}' labeled: {selected_label}", "success")
 
-# After labeling, redirect to the next unlabeled image or back to the dataset browser if done
+    # Prefer the next unlabeled image in the same project so the user keeps
+    # the flow inside one dataset; only cross over when that project is done.
     next_unlabeled = (
-        ImageRecord.query.filter_by(status="unlabeled")
+        ImageRecord.query.filter_by(status="unlabeled", project=image.project)
         .order_by(ImageRecord.uploaded_at.asc())
         .first()
     )
+    if next_unlabeled is None:
+        next_unlabeled = (
+            ImageRecord.query.filter_by(status="unlabeled")
+            .order_by(ImageRecord.uploaded_at.asc())
+            .first()
+        )
+
     if next_unlabeled:
         return redirect(url_for("label.label_page", image_id=next_unlabeled.id))
 
     flash("All images have been labeled.", "success")
     return redirect(url_for("label.dataset_browser"))
 
-# Delete an image and its record from the database
+
+# Delete an image and its record from the database.
 @label_bp.post("/label/<int:image_id>/delete")
 def delete_image(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
@@ -100,12 +118,21 @@ def delete_image(image_id: int):
     flash("Image deleted.", "success")
     return redirect(url_for("label.dataset_browser"))
 
-# dataset_browser shows all images with filtering options
+
+# Dataset browser supports two orthogonal filters: project (DR / SmartBin /
+# all) and labeling status (labeled / unlabeled / all). Both live as query
+# params so URLs stay shareable.
 @label_bp.get("/dataset")
 def dataset_browser():
     label_filter = request.args.get("filter", "all").strip().lower()
+    project_filter = request.args.get("project", "all").strip()
 
     query = ImageRecord.query
+    if project_filter in current_app.config["PROJECT_IDS"]:
+        query = query.filter_by(project=project_filter)
+    else:
+        project_filter = "all"
+
     if label_filter == "labeled":
         query = query.filter_by(status="labeled")
     elif label_filter == "unlabeled":
@@ -119,4 +146,6 @@ def dataset_browser():
         "dashboard.html",
         images=images,
         active_filter=label_filter,
+        active_project=project_filter,
+        project_ids=current_app.config["PROJECT_IDS"],
     )

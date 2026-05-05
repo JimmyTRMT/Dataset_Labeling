@@ -4,43 +4,73 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-lg-7">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h1 class="h4 mb-3">Export Dataset</h1>
+    <div class="col-lg-8">
+        <h1 class="h4 mb-3">Export Dataset</h1>
+        <p class="text-muted small mb-4">
+            CSV uses UTF-8 with BOM for Excel compatibility.
+        </p>
 
-                <ul class="list-group list-group-flush mb-4">
-                    <li class="list-group-item d-flex justify-content-between">
-                        <span>Total Images</span>
-                        <strong>{{ total_count }}</strong>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between">
-                        <span>Labeled (exportable)</span>
-                        <strong class="text-success">{{ labeled_count }}</strong>
-                    </li>
-                </ul>
+        {# One card per project. Each card pulls its own counts and emits
+           filenames like export_DR_full_<timestamp>.csv. #}
+        {% for project_id in project_ids %}
+            {% set project_counts = counts[project_id] %}
+            {% set is_empty = project_counts.labeled == 0 %}
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h2 class="h5 mb-3">{{ project_id }} project</h2>
 
-                {% if labeled_count == 0 %}
-                    <div class="alert alert-warning">No labeled images to export yet.</div>
-                {% endif %}
+                    <ul class="list-group list-group-flush mb-3">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Total images</span>
+                            <strong>{{ project_counts.total }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Labeled (exportable)</span>
+                            <strong class="text-success">{{ project_counts.labeled }}</strong>
+                        </li>
+                    </ul>
 
-                <h2 class="h6 text-uppercase text-muted">CSV exports</h2>
-                <div class="d-grid gap-2 mb-4">
-                    <a href="{{ url_for('export.export_csv', format='full') }}" class="btn btn-outline-success {% if labeled_count == 0 %}disabled{% endif %}">Export as CSV (full metadata)</a>
-                    <a href="{{ url_for('export.export_csv', format='ai') }}" class="btn btn-outline-success {% if labeled_count == 0 %}disabled{% endif %}">Export as CSV (AI training: image_path, label)</a>
+                    {% if is_empty %}
+                        <div class="alert alert-warning">No labeled images in {{ project_id }} yet.</div>
+                    {% endif %}
+
+                    <h3 class="h6 text-uppercase text-muted">CSV exports</h3>
+                    <div class="d-grid gap-2 mb-3">
+                        <a href="{{ url_for('export.export_csv', project=project_id, format='full') }}"
+                           class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
+                            Export as CSV (full metadata)
+                        </a>
+                        <a href="{{ url_for('export.export_csv', project=project_id, format='ai') }}"
+                           class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
+                            Export as CSV (AI training: image_path, label)
+                        </a>
+                    </div>
+
+                    <h3 class="h6 text-uppercase text-muted">JSON exports</h3>
+                    <div class="d-grid gap-2 mb-3">
+                        <a href="{{ url_for('export.export_json', project=project_id, format='full') }}"
+                           class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
+                            Export as JSON (full metadata)
+                        </a>
+                        <a href="{{ url_for('export.export_json', project=project_id, format='ai') }}"
+                           class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
+                            Export as JSON (AI training: image_path, label)
+                        </a>
+                    </div>
+
+                    {# Visual export: one self-contained HTML file with a
+                       2-column table (image | label). Images are embedded
+                       as base64 so the file works offline, no folder needed. #}
+                    <h3 class="h6 text-uppercase text-muted">Visual export</h3>
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('export.export_html', project=project_id) }}"
+                           class="btn btn-warning text-dark {% if is_empty %}disabled{% endif %}">
+                            Export as HTML (image | label table)
+                        </a>
+                    </div>
                 </div>
-
-                <h2 class="h6 text-uppercase text-muted">JSON exports</h2>
-                <div class="d-grid gap-2">
-                    <a href="{{ url_for('export.export_json', format='full') }}" class="btn btn-outline-primary {% if labeled_count == 0 %}disabled{% endif %}">Export as JSON (full metadata)</a>
-                    <a href="{{ url_for('export.export_json', format='ai') }}" class="btn btn-outline-primary {% if labeled_count == 0 %}disabled{% endif %}">Export as JSON (AI training: image_path, label)</a>
-                </div>
-
-                <p class="form-text mt-3 mb-0">
-                    CSV exports use UTF-8 with BOM for Excel compatibility.
-                </p>
             </div>
-        </div>
+        {% endfor %}
     </div>
 </div>
 {% endblock %}

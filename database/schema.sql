@@ -1,12 +1,13 @@
--- Dataset Labeling Tool - SQLite schema
 -- This file is informational. The actual database is created automatically
 -- by SQLAlchemy on first run via db.create_all() (see backend/app.py).
--- It is provided here as a reference for reviewers and other database engines.
 
 CREATE TABLE IF NOT EXISTS images (
     id                          INTEGER       PRIMARY KEY AUTOINCREMENT,
     original_filename           VARCHAR(255)  NOT NULL,
     stored_filename             VARCHAR(255)  NOT NULL UNIQUE,
+    -- Project tag (DR or SmartBin) drives which label set is offered and
+    -- which export bucket the row belongs to.
+    project                     VARCHAR(50)   NOT NULL DEFAULT 'DR',
     contributor                 VARCHAR(100),
     notes                       TEXT,
     label                       VARCHAR(100),
@@ -20,3 +21,4 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_status      ON images(status);
 CREATE INDEX IF NOT EXISTS idx_images_uploaded_at ON images(uploaded_at);
 CREATE INDEX IF NOT EXISTS idx_images_label       ON images(label);
+CREATE INDEX IF NOT EXISTS idx_images_project     ON images(project);

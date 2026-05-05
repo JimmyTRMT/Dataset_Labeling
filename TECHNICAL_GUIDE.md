@@ -31,14 +31,23 @@ This document is written for engineers, reviewers, and contributors who need to 
 
 ## 1. Overview
 
+The system serves **two research projects** side-by-side under a single tool:
+
+- **DR** (diabetic retinopathy) — labels: `severity 0` … `severity 5`
+- **SmartBin** (waste sorting) — labels: `Can`, `Plastic`, `Glass`, `Cardboard`
+
+Each uploaded image is tagged with one project. Datasets, labeling sessions, and exports are kept strictly separate, so a DR export only ever contains DR rows and a SmartBin export only ever contains SmartBin rows.
+
 The system has four user-facing capabilities:
 
-1. **Upload** images (single or batch) with an optional contributor name and notes.
-2. **Label** each image by clicking a label button or pressing its number key (`1`–`9`).
-3. **Browse** the dataset with filename, contributor, label, and upload date; filter by All / Labeled / Unlabeled.
-4. **Export** the labeled dataset as CSV or JSON in two layouts:
+1. **Upload** images (single or batch) under one of the two projects (mandatory radio choice), with an optional contributor name and notes.
+2. **Label** each image by clicking a label button or pressing its number key (`1`–`9`). The buttons shown depend on the current image's project.
+3. **Browse** the dataset with filename, project, contributor, label, and upload date; filter by project (All / DR / SmartBin) and by status (All / Labeled / Unlabeled).
+4. **Export** the labeled dataset of one project as CSV or JSON, in two layouts:
    - *Full* metadata — all DB columns, useful for audit and traceability.
    - *AI-ready* — two columns (`image_path`, `label`), drops straight into PyTorch / Keras / pandas pipelines.
+
+Filenames are of the form `export_<project>_<format>_<timestamp>.<ext>` so reviewers can tell DR from SmartBin at a glance.
 
 It is **research-grade software**: minimal scope, clean structure, no authentication. A login layer must be added before exposing it on the public internet.
 
@@ -49,7 +58,7 @@ It is **research-grade software**: minimal scope, clean structure, no authentica
 | Beginner-friendly layout     | Three-tier separation: `backend/` · `frontend/` · `data/`    |
 | Predictable behavior         | Absolute paths anchored to project root, fail-fast config    |
 | Safe defaults                | CSRF on, path traversal blocked, extension whitelist         |
-| Easy to swap label sets      | `AVAILABLE_LABELS` env variable, no code change required     |
+| Two projects in one tool     | `project` column on every row, hardcoded `PROJECT_LABELS` per spec |
 | Easy to swap database        | SQLAlchemy URL, SQLite default, PostgreSQL one env away      |
 | Easy to read for reviewers   | Vanilla JS, no build step, small files, pointed comments     |
 
@@ -161,8 +170,22 @@ Both `UPPER_SNAKE_CASE` and `CamelCase` names are accepted, so deployments can u
 | `DATABASE_URL`       | `sqlite:///<root>/database/dataset.db` | Any SQLAlchemy URL                     |
 | `UPLOAD_FOLDER`      | `<root>/data/images`                 | Where uploads are stored                 |
 | `EXPORT_FOLDER`      | `<root>/data/exports`                | Where exports are written                |
-| `AVAILABLE_LABELS`   | `No DR,Mild,Moderate,Severe`         | Comma-separated list of label options    |
 | `FLASK_DEBUG`        | `false`                              | `true` / `1` / `yes` / `on` to enable    |
+
+Project metadata is **not** env-driven — the spec fixes both the project IDs and the label sets, so they live as Python constants in `config.py`:
+
+```python
+PROJECT_DR = "DR"
+PROJECT_SMARTBIN = "SmartBin"
+PROJECT_IDS = (PROJECT_DR, PROJECT_SMARTBIN)
+PROJECT_LABELS = {
+    PROJECT_DR: ["severity 0", "severity 1", "severity 2",
+                 "severity 3", "severity 4", "severity 5"],
+    PROJECT_SMARTBIN: ["Can", "Plastic", "Glass", "Cardboard"],
+}
+```
+
+These constants are exposed on `flask_app.config` so routes read them via `current_app.config["PROJECT_IDS"]` / `["PROJECT_LABELS"]` without re-importing.
 
 ### Path anchoring
 
@@ -177,7 +200,6 @@ After anchoring, all three I/O paths (`UPLOAD_FOLDER`, `EXPORT_FOLDER`, `SQLALCH
 
 ```python
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024   # 16 MB upload cap
-DEFAULT_LABELS = ["No DR", "Mild", "Moderate", "Severe"]
 DEFAULT_SECRET_KEY = "dev-change-me-secret"
 ```
 
@@ -199,9 +221,10 @@ The `create_app()` factory does the following, in order:
 4. Creates `data/images/`, `data/exports/`, and `database/` if they don't exist (`mkdir(exist_ok=True, parents=True)`).
 5. Initializes SQLAlchemy and CSRFProtect against the app.
 6. Calls `db.create_all()` inside an `app_context()` to create missing tables.
-7. **Fail-fast guard**: in production mode (`FLASK_DEBUG=false`), refuses to start if `SECRET_KEY` is still the default value. This prevents a deployment with a publicly-known signing key.
-8. Registers the three blueprints (`upload_bp`, `label_bp`, `export_bp`).
-9. Registers the home route (`/`) and the 404/413/500 error handlers.
+7. Calls `ensure_schema_compatibility()` to backfill new columns on legacy SQLite databases (e.g. adding `project` to old rows with default `'DR'`). No-op on fresh installs.
+8. **Fail-fast guard**: in production mode (`FLASK_DEBUG=false`), refuses to start if `SECRET_KEY` is still the default value. This prevents a deployment with a publicly-known signing key.
+9. Registers the three blueprints (`upload_bp`, `label_bp`, `export_bp`).
+10. Registers the home route (`/`) and the 404/413/500 error handlers.
 
 The module ends with `app = create_app()` so that `gunicorn backend.app:app` and `python -m backend` both work.
 
@@ -226,6 +249,7 @@ A single table, defined in [`backend/models/database.py`](backend/models/databas
 | `id`                        | INTEGER PK     | no       | Auto-increment                                   |
 | `original_filename`         | VARCHAR(255)   | no       | Output of `secure_filename()` on the upload      |
 | `stored_filename`           | VARCHAR(255)   | no, UNIQUE | `YYYYMMDDHHMMSS_<8-hex>.<ext>`                 |
+| `project`                   | VARCHAR(50)    | no       | `"DR"` or `"SmartBin"`. Drives label set + export |
 | `contributor`               | VARCHAR(100)   | yes      | Free-form name from the upload form              |
 | `notes`                     | TEXT           | yes      | Free-form notes from the upload form             |
 | `label`                     | VARCHAR(100)   | yes      | Set when status moves to `labeled`               |
@@ -264,24 +288,25 @@ Tab switching, refresh, and stepping away from the desk would all inflate `label
 
 ### `upload_bp` ([backend/routes/upload.py](backend/routes/upload.py))
 
-- `GET /upload` — renders `upload.html`.
-- `POST /upload` — accepts `images[]`, optional `contributor`, optional `notes`. Calls `persist_uploaded_images()`. Redirects to `/label` on success.
+- `GET /upload` — renders `upload.html`. Passes `project_ids` so the radio buttons stay in sync with config.
+- `POST /upload` — accepts `project` (mandatory, must be in `PROJECT_IDS`), `images[]`, optional `contributor`, optional `notes`. Rejects requests where `project` is missing or unknown. Calls `persist_uploaded_images()`. Redirects to `/label` on success.
 - `GET /images/<path:filename>` — serves a stored image file via `send_from_directory()`. Used by `<img src>` tags throughout the UI. **Path traversal is blocked** by Werkzeug's `safe_join()`.
 
 ### `label_bp` ([backend/routes/label.py](backend/routes/label.py))
 
-- `GET /label` — renders `label.html`. Optional `?image_id=<id>` to jump to a specific image; otherwise the oldest unlabeled image is shown. Resets `last_viewed_at` on every load.
-- `POST /label/<id>` — accepts `label` (form or JSON), records the assignment, redirects to the next unlabeled image or to `/dataset` if none remain.
+- `GET /label` — renders `label.html`. Optional `?image_id=<id>` to jump to a specific image; otherwise the oldest unlabeled image is shown. The label buttons rendered come from `PROJECT_LABELS[current_image.project]`. Resets `last_viewed_at` on every load.
+- `POST /label/<id>` — accepts `label` (form or JSON), records the assignment, then jumps to the next unlabeled image **in the same project**, falling back to any unlabeled image across projects if the current project is finished, and to `/dataset` if nothing remains.
 - `POST /label/<id>/delete` — removes the file from disk and the row from the DB. Redirects to `/dataset`.
-- `GET /dataset` — renders `dashboard.html`. Optional `?filter=all|labeled|unlabeled`. Lists images ordered by upload date (newest first).
+- `GET /dataset` — renders `dashboard.html`. Two query params, both optional and orthogonal: `?project=all|DR|SmartBin` and `?filter=all|labeled|unlabeled`. Lists images ordered by upload date (newest first).
 
 ### `export_bp` ([backend/routes/export.py](backend/routes/export.py))
 
-- `GET /export` — renders `export.html` with summary counts.
-- `GET /export/csv?format=full|ai` — generates the CSV via `build_csv_export()` and returns it as an attachment.
-- `GET /export/json?format=full|ai` — generates the JSON via `build_json_export()` and returns it as an attachment.
+- `GET /export` — renders `export.html` with per-project counts (one card per project).
+- `GET /export/csv?project=DR|SmartBin&format=full|ai` — generates a CSV containing only that project's labeled rows. Filename: `export_<project>_<format>_<timestamp>.csv`.
+- `GET /export/json?project=DR|SmartBin&format=full|ai` — same, but JSON. Filename: `export_<project>_<format>_<timestamp>.json`.
+- `GET /export/html?project=DR|SmartBin` — generates a single self-contained HTML file: a 2-column table (image on the left, label on the right) with images embedded as base64 data URLs. Filename: `export_<project>_visual_<timestamp>.html`.
 
-Both export endpoints flash a warning and redirect to `/export` if there are no labeled images.
+`project` is required and validated against `PROJECT_IDS`. An invalid or missing project flashes a warning and redirects to `/export`. If a project has no labeled images, the same redirect happens with a project-specific message.
 
 ### Route summary table
 
@@ -298,6 +323,7 @@ Both export endpoints flash a warning and redirect to `/export` if there are no 
 | GET    | `/export`                     | `export.export_page`       |
 | GET    | `/export/csv`                 | `export.export_csv`        |
 | GET    | `/export/json`                | `export.export_json`       |
+| GET    | `/export/html`                | `export.export_html`       |
 
 ---
 
@@ -313,15 +339,17 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp"}
 is_allowed_file(filename) -> bool
     # Lowercase extension match against the whitelist.
 
-persist_uploaded_images(files, upload_folder, contributor=None, notes=None)
+persist_uploaded_images(files, upload_folder, project, contributor=None, notes=None)
     -> tuple[list[ImageRecord], bool]
+    # `project` is mandatory: every saved row inherits this tag so the
+    # rest of the app can filter cleanly per project.
     # For each uploaded file:
     #   - Skip empty fields.
     #   - Reject non-whitelisted extensions (sets the second tuple element to True).
     #   - Sanitize the filename with secure_filename().
     #   - Build a unique stored name: YYYYMMDDHHMMSS_<8-hex>.<ext>.
     #   - Save the file to upload_folder.
-    #   - Create an ImageRecord (not committed — caller commits).
+    #   - Create an ImageRecord with `project=project` (not committed — caller commits).
 
 delete_image_file(image, upload_folder) -> None
     # Best-effort deletion. Swallows OSError so the DB row can still be removed
@@ -333,16 +361,24 @@ The collision-resistant filename pattern (timestamp + random hex) guarantees uni
 ### `export_service.py`
 
 ```python
-build_csv_export(images, export_folder, export_format="full") -> Path
-    # Writes data/exports/dataset_<format>_<timestamp>.csv
+build_csv_export(images, export_folder, project, export_format="full") -> Path
+    # Writes data/exports/export_<project>_<format>_<timestamp>.csv
     # Uses utf-8-sig (BOM) so Excel on Windows opens accented or non-Latin text correctly.
-    # Format "full" -> all metadata columns.
-    # Format "ai"   -> two columns (image_path, label).
+    # Format "full" -> all metadata columns (including `project`).
+    # Format "ai"   -> two columns (image_path, label) — project is in the filename.
 
-build_json_export(images, export_folder, export_format="full") -> Path
-    # Writes data/exports/dataset_<format>_<timestamp>.json
+build_json_export(images, export_folder, project, export_format="full") -> Path
+    # Writes data/exports/export_<project>_<format>_<timestamp>.json
     # JSON arrays of dicts, indented for readability, ensure_ascii=False.
+
+build_html_export(images, export_folder, upload_folder, project) -> Path
+    # Writes data/exports/export_<project>_visual_<timestamp>.html
+    # A single self-contained HTML file: 2-column table (image | label).
+    # Each image is embedded as a base64 data URL so the file works offline,
+    # no companion folder needed. Open in any browser.
 ```
+
+Callers are expected to pre-filter the images by project before calling any builder; the routes do this. The `project` argument is only used for the filename (and, in the ZIP report, for the page title).
 
 ### Why CSV uses BOM and JSON does not
 
@@ -373,24 +409,30 @@ Two cards stacked vertically:
 
 ### `upload.html`
 
-A single form: file picker (multi-select), optional `contributor`, optional `notes`, submit button. The hidden `<input type="file">` is triggered by a styled "Choose File" button so the form looks consistent with Bootstrap.
+A single form with **mandatory project selection** (radio buttons for DR / SmartBin, both share the `required` attribute so the browser blocks submission until one is picked), file picker (multi-select), optional `contributor`, optional `notes`, submit button. The hidden `<input type="file">` is triggered by a styled "Choose File" button so the form looks consistent with Bootstrap.
 
 ### `label.html`
 
 A two-column layout:
 
 - **Left**: progress (X / Y images, percentage bar, counts) and shortcuts to Dataset / Export.
-- **Right**: the current image, a row of label buttons (each with a `1`-`9` badge), Save / Skip / Delete buttons, and a thumbnail strip of pending images.
+- **Right**: the current image with its **project badge** above it, a row of label buttons matching the image's project (each with a `1`-`9` badge), Save / Skip / Delete buttons, and a thumbnail strip of pending images.
 
 The Save button stays disabled until a label is selected — preventing empty submissions.
 
 ### `dashboard.html` (Dataset browser)
 
-A table with five columns: Filename · Contributor · Label · Upload date · Actions. A filter toggle at the top switches between All / Labeled / Unlabeled (a query string is used so the URL is shareable). Each row offers a *Label* button (if unlabeled) and a *Delete* button (with JS confirmation).
+A table with six columns: Filename · Project · Contributor · Label · Upload date · Actions. **Two filter groups** at the top: project (All projects / DR / SmartBin) and status (All / Labeled / Unlabeled). The two filters are orthogonal and stack via query string, so the URL is shareable. Each row offers a *Label* button (if unlabeled) and a *Delete* button (with JS confirmation).
 
 ### `export.html`
 
-Two grouped sections: CSV exports (full / AI) and JSON exports (full / AI). All four buttons are disabled when `labeled_count == 0`.
+**One card per project**, each with its own counts and three groups of buttons:
+
+- CSV full / CSV AI (full metadata vs. 2-column AI-ready)
+- JSON full / JSON AI (same layouts, JSON output)
+- Visual HTML (single self-contained file, 2-column table with embedded images)
+
+Buttons are disabled when that project has no labeled images. Generated filenames embed the project name so DR and SmartBin exports are visually distinct in the downloads folder.
 
 ### `errors/404.html` and `errors/500.html`
 
@@ -460,24 +502,26 @@ Used on `/dataset`. Single responsibility: confirm before deleting an image.
 ### Uploading images
 
 ```
-Browser -- POST /upload (multipart, csrf_token) ----> Flask
-  |                                                     |
-  |                                              CSRFProtect validates token
-  |                                                     |
-  |                                              MAX_CONTENT_LENGTH check
-  |                                                     |
-  |                                              upload.upload_images()
-  |                                                     |
-  |                              persist_uploaded_images() iterates files:
-  |                                                     |
-  |                                  - is_allowed_file()? skip if not
-  |                                  - secure_filename() + UUID stored name
-  |                                  - file.save(target_path)
-  |                                  - build ImageRecord
-  |                                                     |
-  |                                              db.session.commit()
-  |                                                     |
-  |  <-- 302 -- redirect to /label ----------------------|
+Browser -- POST /upload (multipart, csrf_token, project=DR) ----> Flask
+  |                                                                 |
+  |                                                          CSRFProtect validates token
+  |                                                                 |
+  |                                                          MAX_CONTENT_LENGTH check
+  |                                                                 |
+  |                                                          upload.upload_images()
+  |                                                                 |
+  |                                              project in PROJECT_IDS? else 302 + flash
+  |                                                                 |
+  |                                          persist_uploaded_images(project=...) iterates files:
+  |                                                                 |
+  |                                              - is_allowed_file()? skip if not
+  |                                              - secure_filename() + UUID stored name
+  |                                              - file.save(target_path)
+  |                                              - build ImageRecord(project=project, ...)
+  |                                                                 |
+  |                                                          db.session.commit()
+  |                                                                 |
+  |  <-- 302 -- redirect to /label --------------------------------- |
 ```
 
 ### Labeling an image
@@ -487,80 +531,115 @@ GET /label?image_id=42
   -> SELECT all unlabeled images (order by uploaded_at)
   -> Pick image #42 (or first if not specified)
   -> UPDATE last_viewed_at = now() for the chosen image
-  -> Render label.html with the image, label buttons, and pending thumbs
+  -> available_labels = PROJECT_LABELS[image.project]
+  -> Render label.html with the image, the project's label buttons, and pending thumbs
 
-POST /label/42 with form { label: "Mild" }
+POST /label/42 with form { label: "severity 2" }
   -> CSRF validated
   -> SELECT image #42
   -> duration = now() - last_viewed_at
-  -> UPDATE image SET label='Mild', status='labeled', labeled_at=now(),
+  -> UPDATE image SET label='severity 2', status='labeled', labeled_at=now(),
                       labeling_duration_seconds=duration, last_viewed_at=NULL
-  -> Find the next unlabeled image
+  -> Find next unlabeled image WHERE project = <same project>
+     (fallback to any project if that one is empty)
   -> 302 to /label?image_id=<next> (or /dataset if none left)
 ```
 
 ### Exporting CSV
 
 ```
-GET /export/csv?format=ai
-  -> SELECT all labeled images, ordered by id
+GET /export/csv?project=DR&format=ai
+  -> Validate project against PROJECT_IDS
+  -> SELECT labeled images WHERE project='DR', ordered by id
   -> If empty: flash warning, redirect to /export
-  -> build_csv_export()
-       - Open data/exports/dataset_ai_<timestamp>.csv with utf-8-sig
+  -> build_csv_export(images, export_folder, project='DR', format='ai')
+       - Open data/exports/export_DR_ai_<timestamp>.csv with utf-8-sig
        - Write header: image_path, label
        - For each image, write {image_path: "data/images/<stored>", label: <label>}
   -> send_file(absolute_path, as_attachment=True)
-  -> Browser downloads dataset_ai_<timestamp>.csv
+  -> Browser downloads export_DR_ai_<timestamp>.csv
 ```
 
 ---
 
 ## 13. Export formats
 
-### CSV — Full metadata
+Filenames embed the project and the format, so DR and SmartBin exports never get mixed up:
 
 ```
-id,original_filename,stored_filename,image_path,contributor,notes,label,status,uploaded_at,labeled_at
-1,cat.jpg,20260428093015_a1b2c3d4.jpg,data/images/20260428093015_a1b2c3d4.jpg,Alice,Sample,Mild,labeled,2026-04-28T09:30:15,2026-04-28T09:31:02
+data/exports/export_DR_full_20260429_120000.csv
+data/exports/export_DR_ai_20260429_120000.csv
+data/exports/export_SmartBin_full_20260429_120000.json
+data/exports/export_SmartBin_ai_20260429_120000.json
+data/exports/export_DR_visual_20260429_120000.html
+```
+
+### Visual export (HTML)
+
+The HTML layout is the only export where reviewers SEE the actual image. It is a **single self-contained file** — no folder, no companion CSV — that you can mail, store, or open from anywhere.
+
+Layout:
+
+```
++------------------------+-----------------+
+| Image                  | Label           |
++========================+=================+
+| <embedded image>       | severity 2      |
++------------------------+-----------------+
+| <embedded image>       | severity 0      |
++------------------------+-----------------+
+| ...                    | ...             |
+```
+
+Each `<img>` uses a `data:image/...;base64,...` URL, so the bytes live inside the HTML itself. Trade-off: the file is roughly 1.33× the total size of all included images. For a few hundred typical photos this is fine; for thousands of high-resolution images, prefer the CSV/JSON layouts.
+
+Use case: hand a single file to a colleague, a supervisor, or attach it to a report. Double-click to open in any browser, no extraction step.
+
+### CSV — Full metadata (DR example)
+
+```
+id,original_filename,stored_filename,image_path,project,contributor,notes,label,status,uploaded_at,labeled_at
+1,fundus.jpg,20260429093015_a1b2c3d4.jpg,data/images/20260429093015_a1b2c3d4.jpg,DR,Alice,Right eye,severity 2,labeled,2026-04-29T09:30:15,2026-04-29T09:31:02
 ```
 
 Use case: audit trail, data provenance, reproducibility.
 
-### CSV — AI training
+### CSV — AI training (SmartBin example)
 
 ```
 image_path,label
-data/images/20260428093015_a1b2c3d4.jpg,Mild
-data/images/20260428093017_b2c3d4e5.jpg,No DR
+data/images/20260429093015_a1b2c3d4.jpg,Plastic
+data/images/20260429093017_b2c3d4e5.jpg,Glass
 ```
 
-Use case: drop straight into a PyTorch `Dataset`, a Keras `image_dataset_from_directory`, or a pandas `read_csv` for a training notebook.
+The project name is in the **filename**, not in a column, so AI pipelines stay lean. Use case: drop straight into a PyTorch `Dataset`, a Keras `image_dataset_from_directory`, or a pandas `read_csv` for a training notebook.
 
-### JSON — Full metadata
+### JSON — Full metadata (DR example)
 
 ```json
 [
   {
     "id": 1,
-    "original_filename": "cat.jpg",
-    "stored_filename": "20260428093015_a1b2c3d4.jpg",
-    "image_path": "data/images/20260428093015_a1b2c3d4.jpg",
+    "original_filename": "fundus.jpg",
+    "stored_filename": "20260429093015_a1b2c3d4.jpg",
+    "image_path": "data/images/20260429093015_a1b2c3d4.jpg",
+    "project": "DR",
     "contributor": "Alice",
-    "notes": "Sample",
-    "label": "Mild",
+    "notes": "Right eye",
+    "label": "severity 2",
     "status": "labeled",
-    "uploaded_at": "2026-04-28T09:30:15",
-    "labeled_at": "2026-04-28T09:31:02"
+    "uploaded_at": "2026-04-29T09:30:15",
+    "labeled_at": "2026-04-29T09:31:02"
   }
 ]
 ```
 
-### JSON — AI training
+### JSON — AI training (SmartBin example)
 
 ```json
 [
-  {"image_path": "data/images/20260428093015_a1b2c3d4.jpg", "label": "Mild"},
-  {"image_path": "data/images/20260428093017_b2c3d4e5.jpg", "label": "No DR"}
+  {"image_path": "data/images/20260429093015_a1b2c3d4.jpg", "label": "Plastic"},
+  {"image_path": "data/images/20260429093017_b2c3d4e5.jpg", "label": "Glass"}
 ]
 ```
 
@@ -570,7 +649,7 @@ Use case: drop straight into a PyTorch `Dataset`, a Keras `image_dataset_from_di
 import pandas as pd
 from PIL import Image
 
-dataframe = pd.read_csv("data/exports/dataset_ai_20260428_120000.csv")
+dataframe = pd.read_csv("data/exports/export_DR_ai_20260429_120000.csv")
 first_image = Image.open(dataframe.loc[0, "image_path"])
 ```
 
@@ -606,22 +685,20 @@ gunicorn "backend.app:app" -b 0.0.0.0:8000 -w 4
 
 Behind nginx or Caddy. Make sure `FLASK_DEBUG=false` (or unset) and `SECRET_KEY` is a real random value, otherwise the app refuses to start.
 
-### Switching the label set
+### Adding or editing label sets
 
-Set `AVAILABLE_LABELS` in `.env`:
+Label sets are pinned in `backend/config.py` because the spec mandates exact values per project. To add a third project or change a label, edit `PROJECT_IDS` and `PROJECT_LABELS` and restart the app:
 
-```
-# Diabetic retinopathy
-AVAILABLE_LABELS=No DR,Mild,Moderate,Severe
-
-# Waste sorting
-AVAILABLE_LABELS=Plastic,Paper,Metal,Organic
-
-# Telemedicine
-AVAILABLE_LABELS=Normal,Suspicious,Pathological
+```python
+PROJECT_IDS = ("DR", "SmartBin", "Telemed")
+PROJECT_LABELS = {
+    "DR":       ["severity 0", ..., "severity 5"],
+    "SmartBin": ["Can", "Plastic", "Glass", "Cardboard"],
+    "Telemed":  ["Normal", "Suspicious", "Pathological"],
+}
 ```
 
-Restart the app. No code change required.
+The upload form, dataset filters, and export page pick up the new project automatically — they all loop over `PROJECT_IDS` from the config.
 
 ### Switching to PostgreSQL
 
@@ -650,6 +727,13 @@ curl -s -o /dev/null -w "Export: %{http_code}\n"   http://127.0.0.1:5000/export
 curl -s -o /dev/null -w "404: %{http_code}\n"      http://127.0.0.1:5000/missing
 
 # Expected: 200, 200, 200, 200, 200, 404
+
+# 3. Probe per-project exports (with at least one labeled image of each)
+curl -s -o /dev/null -w "DR CSV: %{http_code}\n"        "http://127.0.0.1:5000/export/csv?project=DR&format=full"
+curl -s -o /dev/null -w "SmartBin JSON: %{http_code}\n" "http://127.0.0.1:5000/export/json?project=SmartBin&format=ai"
+curl -s -o /dev/null -w "Bad project: %{http_code}\n"   "http://127.0.0.1:5000/export/csv?project=Other&format=full"
+
+# Expected: 200 (or 302 if no labeled), 200 (same), 302 (redirect to /export with flash)
 ```
 
 Or programmatically with the Flask test client:
@@ -806,7 +890,10 @@ Database file          database/dataset.db
 Schema reference       database/schema.sql
 Uploaded images        data/images/
 Generated exports      data/exports/
-Default labels         No DR, Mild, Moderate, Severe
+Projects               DR, SmartBin
+DR labels              severity 0 .. severity 5
+SmartBin labels        Can, Plastic, Glass, Cardboard
+Export filename        export_<project>_<format>_<timestamp>.<csv|json>
 Upload size cap        16 MB per request
 Allowed extensions     PNG, JPG, JPEG, BMP, GIF, TIF, TIFF, WEBP
 Keyboard shortcuts     1-9 select label, Enter submits

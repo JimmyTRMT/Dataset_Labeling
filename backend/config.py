@@ -1,20 +1,43 @@
 import os
+from datetime import timedelta, timezone
 from pathlib import Path
 
-# Config class centralizes all configuration settings for the Flask application, reading from environment variables with sensible defaults and ensuring paths are absolute and anchored to the project root.
+
+# UI runs in Thailand, so timestamps shown to users are converted to Thai
+# local time (UTC+7). Thailand has no DST, so a fixed offset is exact
+# year-round and avoids depending on the OS tzdata. DB columns stay UTC.
+DISPLAY_TIMEZONE = timezone(timedelta(hours=7), name="ICT")
+
+
+# Two research projects share this tool. Identifiers are used in URLs,
+# DB rows, and export filenames, so they must stay stable.
+PROJECT_DR = "DR"
+PROJECT_SMARTBIN = "SmartBin"
+PROJECT_IDS: tuple[str, ...] = (PROJECT_DR, PROJECT_SMARTBIN)
+
+# Label sets are fixed by the spec, not env-driven, so reviewers see exactly
+# what the brief asked for.
+PROJECT_LABELS: dict[str, list[str]] = {
+    PROJECT_DR: [
+        "severity 0",
+        "severity 1",
+        "severity 2",
+        "severity 3",
+        "severity 4",
+        "severity 5",
+    ],
+    PROJECT_SMARTBIN: ["Can", "Plastic", "Glass", "Cardboard"],
+}
+
+
+# _as_bool turns env strings ("true", "1", "yes", "on") into booleans.
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
-# _split_labels takes a comma-separated string of labels from the environment and returns a list of cleaned labels, falling back to a default list if the input is empty or None.
-def _split_labels(value: str | None, default: list[str]) -> list[str]:
-    if not value:
-        return default
-    items = [piece.strip() for piece in value.split(",")]
-    return [item for item in items if item] or default
 
-# _anchor_sqlite_url ensures that a relative SQLite database URL is anchored to the project root for consistent behavior across environments, while leaving other database URLs unchanged.
+# _anchor_sqlite_url forces relative SQLite URLs to live under the project root.
 def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     # Flask-SQLAlchemy resolves relative SQLite paths against app.instance_path,
     # not the project root. Pin them to the project root for predictable behavior.
@@ -27,7 +50,8 @@ def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     absolute_path = (project_root / path_part).resolve().as_posix()
     return f"sqlite:///{absolute_path}"
 
-# anchor_folder normalizes a folder path from the environment, ensuring it's absolute and anchored to the project root if it was relative.
+
+# _anchor_folder normalises a folder path to be absolute, anchored at the project root.
 def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> str:
     # Werkzeug's send_file rejects relative paths, so normalise to absolute.
     chosen = raw_value or default
@@ -36,7 +60,8 @@ def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> s
         path = (project_root / chosen).resolve()
     return str(path)
 
-# Config class centralizes all configuration settings for the Flask application, reading from environment variables with sensible defaults and ensuring paths are absolute and anchored 
+
+# Config gathers every runtime setting in one place. Read once, applied app-wide.
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DEFAULT_SECRET_KEY = "dev-change-me-secret"
@@ -44,7 +69,6 @@ class Config:
     DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_DATABASE_PATH}"
     DEFAULT_UPLOAD_FOLDER = str((PROJECT_ROOT / "data" / "images").resolve())
     DEFAULT_EXPORT_FOLDER = str((PROJECT_ROOT / "data" / "exports").resolve())
-    DEFAULT_LABELS = ["No DR", "Mild", "Moderate", "Severe"]
 
     SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("SecretKey") or DEFAULT_SECRET_KEY
     SQLALCHEMY_DATABASE_URI = _anchor_sqlite_url(
@@ -64,7 +88,10 @@ class Config:
         PROJECT_ROOT,
     )
 
-    AVAILABLE_LABELS = _split_labels(os.getenv("AVAILABLE_LABELS"), DEFAULT_LABELS)
+    # Project metadata is static (per spec) and exposed in the Flask config so
+    # routes can read it via current_app.config without re-importing constants.
+    PROJECT_IDS = PROJECT_IDS
+    PROJECT_LABELS = PROJECT_LABELS
 
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 

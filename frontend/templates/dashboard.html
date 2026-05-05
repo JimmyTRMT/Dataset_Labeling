@@ -5,12 +5,28 @@
 {% block content %}
 <div class="card shadow-sm">
     <div class="card-body">
-        <div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
             <h1 class="h4 mb-0">Dataset</h1>
-            <div class="btn-group" role="group" aria-label="Filter">
-                <a href="{{ url_for('label.dataset_browser', filter='all') }}" class="btn btn-sm btn-outline-secondary {% if active_filter == 'all' %}active{% endif %}">All</a>
-                <a href="{{ url_for('label.dataset_browser', filter='labeled') }}" class="btn btn-sm btn-outline-secondary {% if active_filter == 'labeled' %}active{% endif %}">Labeled</a>
-                <a href="{{ url_for('label.dataset_browser', filter='unlabeled') }}" class="btn btn-sm btn-outline-secondary {% if active_filter == 'unlabeled' %}active{% endif %}">Unlabeled</a>
+
+            {# Two independent filter groups: project, then status. Each link
+               keeps the other filter intact so users can stack them. #}
+            <div class="d-flex flex-wrap gap-2">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Project filter">
+                    <a href="{{ url_for('label.dataset_browser', filter=active_filter, project='all') }}"
+                       class="btn btn-outline-secondary {% if active_project == 'all' %}active{% endif %}">All projects</a>
+                    {% for project_id in project_ids %}
+                        <a href="{{ url_for('label.dataset_browser', filter=active_filter, project=project_id) }}"
+                           class="btn btn-outline-secondary {% if active_project == project_id %}active{% endif %}">{{ project_id }}</a>
+                    {% endfor %}
+                </div>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Status filter">
+                    <a href="{{ url_for('label.dataset_browser', filter='all', project=active_project) }}"
+                       class="btn btn-outline-secondary {% if active_filter == 'all' %}active{% endif %}">All</a>
+                    <a href="{{ url_for('label.dataset_browser', filter='labeled', project=active_project) }}"
+                       class="btn btn-outline-secondary {% if active_filter == 'labeled' %}active{% endif %}">Labeled</a>
+                    <a href="{{ url_for('label.dataset_browser', filter='unlabeled', project=active_project) }}"
+                       class="btn btn-outline-secondary {% if active_filter == 'unlabeled' %}active{% endif %}">Unlabeled</a>
+                </div>
             </div>
         </div>
 
@@ -20,6 +36,7 @@
                     <thead>
                         <tr>
                             <th>Filename</th>
+                            <th>Project</th>
                             <th>Contributor</th>
                             <th>Label</th>
                             <th>Upload date</th>
@@ -30,6 +47,7 @@
                         {% for image in images %}
                             <tr>
                                 <td><span class="text-break">{{ image.original_filename }}</span></td>
+                                <td><span class="badge bg-info text-dark">{{ image.project }}</span></td>
                                 <td>{{ image.contributor or '-' }}</td>
                                 <td>
                                     {% if image.status == 'labeled' %}
@@ -38,7 +56,7 @@
                                         <span class="badge bg-warning text-dark">Unlabeled</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ image.uploaded_at.strftime('%Y-%m-%d %H:%M') if image.uploaded_at else '' }}</td>
+                                <td>{{ image.uploaded_at | local_time }}</td>
                                 <td class="text-end">
                                     {% if image.status == 'unlabeled' %}
                                         <a href="{{ url_for('label.label_page', image_id=image.id) }}" class="btn btn-sm btn-primary">Label</a>
@@ -56,11 +74,11 @@
         {% else %}
             <div class="alert alert-info mb-0">
                 {% if active_filter == 'labeled' %}
-                    No labeled images yet. <a href="{{ url_for('label.label_page') }}">Start labeling</a>.
+                    No labeled images for this filter yet. <a href="{{ url_for('label.label_page') }}">Start labeling</a>.
                 {% elif active_filter == 'unlabeled' %}
-                    No unlabeled images. <a href="{{ url_for('upload.upload_page') }}">Upload more</a>.
+                    No unlabeled images for this filter. <a href="{{ url_for('upload.upload_page') }}">Upload more</a>.
                 {% else %}
-                    No images yet. <a href="{{ url_for('upload.upload_page') }}">Upload your first image</a>.
+                    No images for this filter yet. <a href="{{ url_for('upload.upload_page') }}">Upload your first image</a>.
                 {% endif %}
             </div>
         {% endif %}
