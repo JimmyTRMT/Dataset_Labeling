@@ -1,10 +1,15 @@
+// Labeling page interactions: pick a label, sync to the hidden input,
+// enable the Save button, and support 1-9 keyboard shortcuts.
+
 const labelButtons = document.querySelectorAll(".label-option-btn");
 const selectedLabelInput = document.getElementById("selected-label-input");
 const saveButton = document.getElementById("save-label-btn");
 const labelForm = document.getElementById("label-form");
 
 let selectedButton = null;
-// selectLabel handles the logic for selecting a label button, updating the hidden input with the selected label, and enabling the save button.
+
+
+// Marks one button as selected and pushes its label into the hidden input.
 function selectLabel(button) {
     if (!button) return;
     if (selectedButton) {
@@ -19,7 +24,7 @@ function selectLabel(button) {
         saveButton.disabled = false;
     }
 }
-// add event listeners to each label button
+
 labelButtons.forEach(function (button) {
     button.addEventListener("click", function () {
         selectLabel(button);
@@ -33,7 +38,10 @@ if (labelForm) {
         }
     });
 }
-// add a keydown event listener to the document to handle keyboard shortcuts for label selection and form submission, while ignoring inputs when focus is on form fields.
+
+// Keyboard shortcuts: 1-9 picks the matching label, Enter submits when a
+// label is selected. We bail out when focus is in a form field so typing
+// in a text box never triggers a label change.
 document.addEventListener("keydown", function (event) {
     const focusedTag = document.activeElement ? document.activeElement.tagName : "";
     if (["INPUT", "TEXTAREA", "SELECT"].includes(focusedTag)) {

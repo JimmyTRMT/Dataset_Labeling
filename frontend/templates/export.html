@@ -42,7 +42,7 @@
                         </a>
                         <a href="{{ url_for('export.export_csv', project=project_id, format='ai') }}"
                            class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
-                            Export as CSV (AI training: image_path, label)
+                            Export as CSV (AI training: image_path, label,contrast,dissimilarity,homogeneity,energy,correlation,asm)
                         </a>
                     </div>
 
@@ -54,7 +54,7 @@
                         </a>
                         <a href="{{ url_for('export.export_json', project=project_id, format='ai') }}"
                            class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
-                            Export as JSON (AI training: image_path, label)
+                            Export as JSON (AI training: image_path, label,contrast,dissimilarity,homogeneity,energy,correlation,asm)
                         </a>
                     </div>
 

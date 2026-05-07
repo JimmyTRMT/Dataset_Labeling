@@ -37,7 +37,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The project depends on 7 packages: Flask, Flask-SQLAlchemy, Flask-WTF, SQLAlchemy, Werkzeug, python-dotenv, and gunicorn (production WSGI server).
+The project depends on 9 packages: Flask, Flask-SQLAlchemy, Flask-WTF, SQLAlchemy, Werkzeug, python-dotenv, gunicorn (production WSGI server), scikit-image and opencv-python (GLCM texture features at export time).
 
 ## 4. Configure environment variables
 

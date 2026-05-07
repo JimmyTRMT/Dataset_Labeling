@@ -9,6 +9,7 @@ from flask import (
     request,
     url_for,
 )
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.database import ImageRecord, db
 from backend.services.image_service import delete_image_file
@@ -17,7 +18,8 @@ from backend.services.image_service import delete_image_file
 label_bp = Blueprint("label", __name__)
 
 
-# Label page shows the current image and the buttons matching its project.
+# Renders the labeling page. The current image is either the one passed in
+# the URL or the oldest unlabeled image. Label buttons match its project.
 @label_bp.get("/label")
 def label_page():
     selected_id = request.args.get("image_id", type=int)
@@ -35,15 +37,20 @@ def label_page():
         current_image = unlabeled_images[0]
 
     if current_image:
-        # Reset on every page load so refresh / tab-switch don't inflate the duration.
+        # Reset on every page load so refresh / tab-switch don't inflate
+        # the labeling duration we record later.
         current_image.last_viewed_at = datetime.utcnow()
-        db.session.commit()
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            current_app.logger.exception("Failed to update last_viewed_at")
 
-    # Pick the right label set for the current image's project. If somehow
-    # the project is unknown (legacy row), we fall back to an empty list.
     project_labels = current_app.config["PROJECT_LABELS"]
     available_labels: list[str] = []
     if current_image:
+        # If the project tag is unknown (e.g. a legacy row), fall back to
+        # an empty list so the page still renders without crashing.
         available_labels = project_labels.get(current_image.project, [])
 
     total_count = ImageRecord.query.count()
@@ -60,8 +67,8 @@ def label_page():
     )
 
 
-# Assign a label to the current image and jump to the next unlabeled one in
-# the same project, so the user can stay focused on one project at a time.
+# Records a label, computes the time spent on the image, and jumps to the
+# next unlabeled image inside the same project so the user keeps the flow.
 @label_bp.post("/label/<int:image_id>")
 def assign_label(image_id: int):
     selected_label = ""
@@ -82,12 +89,18 @@ def assign_label(image_id: int):
         duration_seconds = max(0.0, (datetime.utcnow() - image.last_viewed_at).total_seconds())
 
     image.mark_as_labeled(selected_label, duration_seconds=duration_seconds)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Failed to save label for image %s", image_id)
+        flash("Could not save the label. Please try again.", "warning")
+        return redirect(url_for("label.label_page", image_id=image_id))
 
     flash(f"Image '{image.original_filename}' labeled: {selected_label}", "success")
 
-    # Prefer the next unlabeled image in the same project so the user keeps
-    # the flow inside one dataset; only cross over when that project is done.
+    # Stay inside the same project as long as work remains, then fall back
+    # to anything else still unlabeled.
     next_unlabeled = (
         ImageRecord.query.filter_by(status="unlabeled", project=image.project)
         .order_by(ImageRecord.uploaded_at.asc())
@@ -107,21 +120,29 @@ def assign_label(image_id: int):
     return redirect(url_for("label.dataset_browser"))
 
 
-# Delete an image and its record from the database.
+# Deletes the image from disk first, then the DB row. If the DB step fails,
+# the file is already gone but the transaction is rolled back; the next
+# scheduled cleanup (or a manual delete retry) reconciles state.
 @label_bp.post("/label/<int:image_id>/delete")
 def delete_image(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
     delete_image_file(image, current_app.config["UPLOAD_FOLDER"])
-    db.session.delete(image)
-    db.session.commit()
+    try:
+        db.session.delete(image)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Failed to delete image %s", image_id)
+        flash("Could not delete the image. Please try again.", "warning")
+        return redirect(url_for("label.dataset_browser"))
 
     flash("Image deleted.", "success")
     return redirect(url_for("label.dataset_browser"))
 
 
-# Dataset browser supports two orthogonal filters: project (DR / SmartBin /
-# all) and labeling status (labeled / unlabeled / all). Both live as query
-# params so URLs stay shareable.
+# Lists images with two independent filters: project (all / DR / SmartBin)
+# and status (all / labeled / unlabeled). Both sit in the URL so links stay
+# shareable.
 @label_bp.get("/dataset")
 def dataset_browser():
     label_filter = request.args.get("filter", "all").strip().lower()

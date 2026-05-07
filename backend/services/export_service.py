@@ -7,11 +7,34 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
+import cv2
+import numpy as np
+from skimage.feature import graycomatrix, graycoprops
+
 from backend.config import DISPLAY_TIMEZONE
 from backend.models.database import ImageRecord
 
 
-# Full layout keeps every column the auditor might want, including project.
+# GLCM is computed over one pixel of distance and four directions: 0, 45,
+# 90, and 135 degrees. Each property therefore comes back as a list of 4
+# values, one per direction.
+GLCM_DISTANCES = [1]
+GLCM_ANGLES = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4]
+# graycoprops accepts these property names verbatim. Lowercased equivalents
+# are used as dict keys / column names so they read like CSV headers.
+GLCM_PROPS: tuple[str, ...] = (
+    "contrast",
+    "dissimilarity",
+    "homogeneity",
+    "energy",
+    "correlation",
+    "ASM",
+)
+GLCM_FEATURE_KEYS: tuple[str, ...] = tuple(prop.lower() for prop in GLCM_PROPS)
+
+
+# Full layout keeps every column the auditor might want, including project
+# and one column per GLCM feature.
 EXPORT_FIELDS_FULL = [
     "id",
     "original_filename",
@@ -24,22 +47,67 @@ EXPORT_FIELDS_FULL = [
     "status",
     "uploaded_at",
     "labeled_at",
+    *GLCM_FEATURE_KEYS,
 ]
 
-# AI layout stays minimal so it drops straight into PyTorch / Keras / pandas.
-# The project name is already in the filename, so we don't need a column here.
+# AI layout stays minimal but carries the GLCM features alongside the label,
+# so classical ML pipelines can train on the precomputed texture descriptors.
 EXPORT_FIELDS_AI = [
     "image_path",
     "label",
+    *GLCM_FEATURE_KEYS,
 ]
 
 
-# build_csv_export writes a CSV containing only the rows for one project. The
-# project name is baked into the filename so reviewers can tell DR from
-# SmartBin at a glance.
+# _zero_features returns the fallback dict when an image is missing or
+# unreadable, so a single bad file never breaks an entire export.
+def _zero_features() -> dict[str, list[float]]:
+    return {key: [0.0, 0.0, 0.0, 0.0] for key in GLCM_FEATURE_KEYS}
+
+
+# extract_glcm_features reads one image, converts to grayscale, and computes
+# the 6 standard GLCM properties for the 4 reference angles. Output shape:
+# {"contrast": [v0, v45, v90, v135], "dissimilarity": [...], ...}.
+def extract_glcm_features(image_path: Path) -> dict[str, list[float]]:
+    if not image_path.exists():
+        return _zero_features()
+    try:
+        bgr_image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if bgr_image is None:
+            return _zero_features()
+        grayscale = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
+        glcm_matrix = graycomatrix(
+            grayscale,
+            distances=GLCM_DISTANCES,
+            angles=GLCM_ANGLES,
+            symmetric=True,
+            normed=True,
+        )
+        features: dict[str, list[float]] = {}
+        for prop, key in zip(GLCM_PROPS, GLCM_FEATURE_KEYS):
+            # graycoprops returns shape (len(distances), len(angles)).
+            # We only have one distance, so take row 0 -> 4 floats.
+            angle_values = graycoprops(glcm_matrix, prop)[0]
+            features[key] = [round(float(value), 2) for value in angle_values]
+        return features
+    except Exception:
+        # Any decoding / numpy error falls back to zeros so the rest of the
+        # export still completes.
+        return _zero_features()
+
+
+# _format_feature_for_csv renders a 4-value list as the bracketed string the
+# spec wants in CSV cells, e.g. "[20.70, 31.68, 16.28, 30.71]".
+def _format_feature_for_csv(values: list[float]) -> str:
+    return "[" + ", ".join(f"{value:.2f}" for value in values) + "]"
+
+
+# build_csv_export writes a CSV containing only the rows for one project.
+# Every row also embeds GLCM texture features as bracketed strings.
 def build_csv_export(
     images: Sequence[ImageRecord],
     export_folder: str,
+    upload_folder: str,
     project: str,
     export_format: str = "full",
 ) -> Path:
@@ -48,6 +116,7 @@ def build_csv_export(
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     export_path = Path(export_folder) / f"export_{project}_{normalized_format}_{timestamp}.csv"
+    upload_path = Path(upload_folder)
 
     # utf-8-sig writes a BOM so Excel on Windows opens accented or non-Latin text correctly.
     with export_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
@@ -55,33 +124,43 @@ def build_csv_export(
         writer.writeheader()
         for image in images:
             row = image.to_export_row()
-            if normalized_format == "ai":
-                writer.writerow({"image_path": row["image_path"], "label": row["label"]})
-            else:
-                writer.writerow({field: row.get(field, "") for field in selected_fields})
+            features = extract_glcm_features(upload_path / image.stored_filename)
+            for key in GLCM_FEATURE_KEYS:
+                row[key] = _format_feature_for_csv(features[key])
+            writer.writerow({field: row.get(field, "") for field in selected_fields})
 
     return export_path
 
 
-# build_json_export mirrors the CSV builder but emits JSON. UTF-8 without BOM,
-# so consumers like pandas.read_json don't choke on the leading marker.
+# build_json_export mirrors the CSV builder but emits JSON. Each entry gets
+# a `features` dict so the GLCM values stay queryable as proper lists.
 def build_json_export(
     images: Sequence[ImageRecord],
     export_folder: str,
+    upload_folder: str,
     project: str,
     export_format: str = "full",
 ) -> Path:
     normalized_format = "ai" if export_format.lower().strip() == "ai" else "full"
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     export_path = Path(export_folder) / f"export_{project}_{normalized_format}_{timestamp}.json"
+    upload_path = Path(upload_folder)
 
-    if normalized_format == "ai":
-        payload = [
-            {"image_path": image.to_export_row()["image_path"], "label": image.label or ""}
-            for image in images
-        ]
-    else:
-        payload = [image.to_export_row() for image in images]
+    payload: list[dict] = []
+    for image in images:
+        features = extract_glcm_features(upload_path / image.stored_filename)
+        if normalized_format == "ai":
+            payload.append(
+                {
+                    "image_path": image.to_export_row()["image_path"],
+                    "label": image.label or "",
+                    "features": features,
+                }
+            )
+        else:
+            entry = image.to_export_row()
+            entry["features"] = features
+            payload.append(entry)
 
     with export_path.open("w", encoding="utf-8") as json_file:
         json.dump(payload, json_file, ensure_ascii=False, indent=2)

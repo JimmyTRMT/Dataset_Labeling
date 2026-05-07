@@ -20,8 +20,8 @@ from backend.services.export_service import (
 export_bp = Blueprint("export", __name__)
 
 
-# Export page shows one section per project, each with its own counts and
-# its own set of CSV / JSON download buttons.
+# Renders the export page with one card per project. Each card displays
+# the live image counts and the four download buttons (CSV / JSON / HTML).
 @export_bp.get("/export")
 def export_page():
     project_ids = current_app.config["PROJECT_IDS"]
@@ -29,7 +29,9 @@ def export_page():
     for project_id in project_ids:
         counts[project_id] = {
             "total": ImageRecord.query.filter_by(project=project_id).count(),
-            "labeled": ImageRecord.query.filter_by(project=project_id, status="labeled").count(),
+            "labeled": ImageRecord.query.filter_by(
+                project=project_id, status="labeled"
+            ).count(),
         }
 
     return render_template(
@@ -39,8 +41,9 @@ def export_page():
     )
 
 
-# _resolve_project validates the ?project= query param against the known IDs.
-# Returns the validated project name or None if the value is missing/invalid.
+# Reads the ?project= query param and returns it only if it matches one of
+# the configured project IDs. Returns None for missing or unknown values so
+# the caller can flash a clear message and redirect.
 def _resolve_project() -> str | None:
     project = request.args.get("project", "").strip()
     if project not in current_app.config["PROJECT_IDS"]:
@@ -48,83 +51,97 @@ def _resolve_project() -> str | None:
     return project
 
 
-# Export labeled images of one project as CSV (full or AI layout).
+# Common pre-flight: validate the project, fetch its labeled images, and
+# either return them or redirect with an explanatory flash.
+def _labeled_images_or_redirect():
+    project = _resolve_project()
+    if project is None:
+        flash("Invalid project. Choose DR or SmartBin.", "warning")
+        return None, redirect(url_for("export.export_page"))
+
+    labeled_images = (
+        ImageRecord.query.filter_by(status="labeled", project=project)
+        .order_by(ImageRecord.id.asc())
+        .all()
+    )
+    if not labeled_images:
+        flash(f"No labeled images in {project} project yet.", "warning")
+        return None, redirect(url_for("export.export_page"))
+
+    return (project, labeled_images), None
+
+
+# Exports labeled images of one project as CSV (full or AI layout). GLCM
+# texture features are computed at write time and embedded in each row.
 @export_bp.get("/export/csv")
 def export_csv():
-    project = _resolve_project()
-    if project is None:
-        flash("Invalid project. Choose DR or SmartBin.", "warning")
-        return redirect(url_for("export.export_page"))
+    payload, redirect_response = _labeled_images_or_redirect()
+    if payload is None:
+        return redirect_response
 
+    project, labeled_images = payload
     export_format = request.args.get("format", "full").strip().lower()
-    labeled_images = (
-        ImageRecord.query.filter_by(status="labeled", project=project)
-        .order_by(ImageRecord.id.asc())
-        .all()
-    )
-    if not labeled_images:
-        flash(f"No labeled images in {project} project yet.", "warning")
+    try:
+        export_path = build_csv_export(
+            labeled_images,
+            current_app.config["EXPORT_FOLDER"],
+            current_app.config["UPLOAD_FOLDER"],
+            project=project,
+            export_format=export_format,
+        )
+    except OSError:
+        current_app.logger.exception("CSV export failed for project %s", project)
+        flash("Could not write the CSV file. Please try again.", "warning")
         return redirect(url_for("export.export_page"))
 
-    export_path = build_csv_export(
-        labeled_images,
-        current_app.config["EXPORT_FOLDER"],
-        project=project,
-        export_format=export_format,
-    )
     return send_file(export_path, as_attachment=True)
 
 
-# Export labeled images of one project as a single self-contained HTML file:
-# a 2-column table (image | label) with images embedded as base64. Open in
-# any browser - no companion folder needed.
+# Exports labeled images of one project as a single self-contained HTML
+# file: a 2-column table (image | label) with images embedded as base64.
 @export_bp.get("/export/html")
 def export_html():
-    project = _resolve_project()
-    if project is None:
-        flash("Invalid project. Choose DR or SmartBin.", "warning")
+    payload, redirect_response = _labeled_images_or_redirect()
+    if payload is None:
+        return redirect_response
+
+    project, labeled_images = payload
+    try:
+        export_path = build_html_export(
+            labeled_images,
+            current_app.config["EXPORT_FOLDER"],
+            current_app.config["UPLOAD_FOLDER"],
+            project=project,
+        )
+    except OSError:
+        current_app.logger.exception("HTML export failed for project %s", project)
+        flash("Could not write the HTML file. Please try again.", "warning")
         return redirect(url_for("export.export_page"))
 
-    labeled_images = (
-        ImageRecord.query.filter_by(status="labeled", project=project)
-        .order_by(ImageRecord.id.asc())
-        .all()
-    )
-    if not labeled_images:
-        flash(f"No labeled images in {project} project yet.", "warning")
-        return redirect(url_for("export.export_page"))
-
-    export_path = build_html_export(
-        labeled_images,
-        current_app.config["EXPORT_FOLDER"],
-        current_app.config["UPLOAD_FOLDER"],
-        project=project,
-    )
     return send_file(export_path, as_attachment=True)
 
 
-# Export labeled images of one project as JSON (full or AI layout).
+# Exports labeled images of one project as JSON (full or AI layout). Each
+# entry includes a `features` dict carrying the GLCM texture descriptors.
 @export_bp.get("/export/json")
 def export_json():
-    project = _resolve_project()
-    if project is None:
-        flash("Invalid project. Choose DR or SmartBin.", "warning")
-        return redirect(url_for("export.export_page"))
+    payload, redirect_response = _labeled_images_or_redirect()
+    if payload is None:
+        return redirect_response
 
+    project, labeled_images = payload
     export_format = request.args.get("format", "full").strip().lower()
-    labeled_images = (
-        ImageRecord.query.filter_by(status="labeled", project=project)
-        .order_by(ImageRecord.id.asc())
-        .all()
-    )
-    if not labeled_images:
-        flash(f"No labeled images in {project} project yet.", "warning")
+    try:
+        export_path = build_json_export(
+            labeled_images,
+            current_app.config["EXPORT_FOLDER"],
+            current_app.config["UPLOAD_FOLDER"],
+            project=project,
+            export_format=export_format,
+        )
+    except OSError:
+        current_app.logger.exception("JSON export failed for project %s", project)
+        flash("Could not write the JSON file. Please try again.", "warning")
         return redirect(url_for("export.export_page"))
 
-    export_path = build_json_export(
-        labeled_images,
-        current_app.config["EXPORT_FOLDER"],
-        project=project,
-        export_format=export_format,
-    )
     return send_file(export_path, as_attachment=True)

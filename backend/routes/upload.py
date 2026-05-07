@@ -8,6 +8,7 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.database import ImageRecord, db
 from backend.services.image_service import persist_uploaded_images
@@ -15,8 +16,9 @@ from backend.services.image_service import persist_uploaded_images
 
 upload_bp = Blueprint("upload", __name__)
 
-# Upload page renders the form. The list of valid project IDs is passed in
-# so the radio inputs and the validation message stay in sync with config.
+
+# Renders the upload form. Project IDs come from config so the radio
+# buttons stay in sync with the rest of the app.
 @upload_bp.get("/upload")
 def upload_page():
     return render_template(
@@ -25,7 +27,9 @@ def upload_page():
     )
 
 
-# Handle image uploads, save files, create database records, and redirect to labeling page.
+# Validates the form, persists each accepted file, and creates one DB row
+# per image. On any DB failure the transaction is rolled back so the table
+# never ends up with rows pointing to nothing.
 @upload_bp.post("/upload")
 def upload_images():
     project = request.form.get("project", "").strip()
@@ -33,8 +37,6 @@ def upload_images():
     contributor = request.form.get("contributor", "").strip() or None
     notes = request.form.get("notes", "").strip() or None
 
-    # Project must be one of the known IDs. Anything else is rejected so we
-    # never persist images without a valid bucket.
     if project not in current_app.config["PROJECT_IDS"]:
         flash("Please choose a project (DR or SmartBin) before uploading.", "warning")
         return redirect(url_for("upload.upload_page"))
@@ -51,11 +53,17 @@ def upload_images():
         notes=notes,
     )
 
-    for record in saved_records:
-        db.session.add(record)
-
     if saved_records:
-        db.session.commit()
+        try:
+            for record in saved_records:
+                db.session.add(record)
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            current_app.logger.exception("Failed to persist uploaded images to database")
+            flash("Could not save the upload. Please try again.", "warning")
+            return redirect(url_for("upload.upload_page"))
+
         flash(
             f"Upload successful: {len(saved_records)} image(s) added to {project}.",
             "success",
@@ -71,8 +79,9 @@ def upload_images():
         flash("No image selected.", "warning")
     return redirect(url_for("upload.upload_page"))
 
-# Serve uploaded images for display in the labeling interface
+
+# Serves a stored image file. Werkzeug's send_from_directory uses safe_join
+# under the hood, so it blocks path traversal attempts.
 @upload_bp.get("/images/<path:filename>")
 def serve_image(filename: str):
-    # send_from_directory uses safe_join under the hood and blocks path traversal.
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
