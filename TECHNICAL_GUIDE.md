@@ -27,11 +27,11 @@ The application gives a research team **one place** to:
   - **SmartBin** — waste sorting photographs (4 material classes)
 - **Label** each image by clicking a button or pressing a number key (`1`–`9`).
 - **Browse** the dataset with filters, see who uploaded what, when, and what label it received.
-- **Export** the labeled subset of either project, in four formats:
-  - **CSV** (full metadata, or AI-ready) — opens in Excel, pandas, etc.
-  - **JSON** (full metadata, or AI-ready) — feeds machine learning libraries directly.
+- **Export** the labeled subset of either project, in three formats:
+  - **CSV** — 26 columns, semicolon-separated, opens directly in Excel (FR / IT / ES locales) and pandas.
+  - **JSON** — same 26 keys, flat structure, ready for any ML library.
   - **HTML** — a single self-contained file showing each image next to its label.
-  - All exports include **GLCM texture features** automatically computed for every image (see section 3).
+  - The CSV and JSON exports embed **GLCM texture features** for every image as 24 separate columns (see section 3).
 
 ### Who it is for
 
@@ -173,41 +173,59 @@ The four directions correspond to checking neighbour pairs at angles **0°, 45°
 
 ### How it appears in each export format
 
-**CSV** — six new columns, each holding the bracketed list as a single cell:
+The CSV and JSON share **one strict 26-column schema**, in this exact order:
 
 ```
-...,contrast,dissimilarity,homogeneity,energy,correlation,asm
-...,"[254.73, 360.56, 167.26, 385.92]","[7.86, 11.44, 6.79, 11.55]",...
+img_path,
+con1,  con2,  con3,  con4,        # contrast      at 0°, 45°, 90°, 135°
+dis1,  dis2,  dis3,  dis4,        # dissimilarity at 0°, 45°, 90°, 135°
+hom1,  hom2,  hom3,  hom4,        # homogeneity   at 0°, 45°, 90°, 135°
+ene1,  ene2,  ene3,  ene4,        # energy        at 0°, 45°, 90°, 135°
+corr1, corr2, corr3, corr4,       # correlation   at 0°, 45°, 90°, 135°
+asm1,  asm2,  asm3,  asm4,        # ASM           at 0°, 45°, 90°, 135°
+label
 ```
 
-**JSON** — every record carries a `features` dict:
+**CSV** — semicolon-separated, every metric in its own cell. UTF-8 with BOM so Excel reads accented or Thai characters correctly:
+
+```
+img_path;con1;con2;con3;con4;dis1;...;asm4;label
+data/images/20260507030311_459b956f.jpg;0.0636;0.1307;0.0816;0.1265;0.063;...;0.0607;severity 0
+```
+
+**JSON** — array of flat dicts using the same 26 keys, numbers as JSON numbers:
 
 ```json
-"features": {
-    "contrast":      [254.73, 360.56, 167.26, 385.92],
-    "dissimilarity": [7.86, 11.44, 6.79, 11.55],
-    "homogeneity":   [0.43, 0.25, 0.41, 0.25],
-    "energy":        [0.09, 0.06, 0.08, 0.06],
-    "correlation":   [0.89, 0.84, 0.93, 0.83],
-    "asm":           [0.01, 0.0, 0.01, 0.0]
-}
+[
+    {
+        "img_path": "data/images/20260507030311_459b956f.jpg",
+        "con1": 0.0636, "con2": 0.1307, "con3": 0.0816, "con4": 0.1265,
+        "dis1": 0.063,  "dis2": 0.1289, "dis3": 0.0802, "dis4": 0.1248,
+        "hom1": 0.9685, "hom2": 0.9357, "hom3": 0.96,   "hom4": 0.9378,
+        "ene1": 0.2621, "ene2": 0.2454, "ene3": 0.2577, "ene4": 0.2464,
+        "corr1": 0.9979, "corr2": 0.9957, "corr3": 0.9973, "corr4": 0.9959,
+        "asm1": 0.0687, "asm2": 0.0602, "asm3": 0.0664, "asm4": 0.0607,
+        "label": "severity 0"
+    }
+]
 ```
 
 **HTML** — the visual layout focuses on *image + label* (texture features are not shown).
 
 ### What happens when an image is missing or corrupt
 
-If a file referenced by the database is missing on disk, or the file fails to decode, the export does **not** crash. Instead the row gets `[0.0, 0.0, 0.0, 0.0]` for every feature, and the rest of the export continues. You can spot affected rows in two ways:
+If a file referenced by the database is missing on disk, or the file fails to decode, the export does **not** crash. Instead the 24 feature columns of that row are all set to `0.0`, and the rest of the export continues. You can spot affected rows in two ways:
 
-- All six features will be the all-zero list.
+- The 24 GLCM cells (`con1` … `asm4`) are all `0.0`.
 - The image cell in the HTML export shows "missing file".
 
 ### Where the code lives
 
 The implementation is in [`backend/services/export_service.py`](backend/services/export_service.py):
 
-- `extract_glcm_features(path)` — reads the image (OpenCV), converts it to grayscale, calls `skimage.feature.graycomatrix` and `graycoprops`, and returns a dict of six lists.
-- `build_csv_export`, `build_json_export`, `build_html_export` — the three writers, each calling the helper above for every image.
+- `extract_glcm_features(path)` — reads the image (OpenCV), converts it to grayscale, calls `skimage.feature.graycomatrix` and `graycoprops`, and returns a flat dict of 24 keys (`con1` … `asm4`).
+- `build_csv_export`, `build_json_export` — emit the 26-column schema. CSV uses `csv.writer(..., delimiter=";")`; JSON keeps the keys flat to mirror the CSV.
+- `build_html_export` — the visual gallery, independent of the GLCM pipeline.
 
 ---
 
@@ -311,14 +329,15 @@ for path in ["/", "/upload", "/label", "/dataset", "/export"]:
     print(path, client.get(path).status_code)   # should be 200
 ```
 
-For exports, check both HTTP status and the GLCM presence:
+For exports, check both the HTTP status and the 26-column schema:
 
 ```python
 import json
-data = json.loads(client.get("/export/json?project=DR&format=full").data)
+data = json.loads(client.get("/export/json?project=DR").data)
 if data:
-    print("features keys:", list(data[0]["features"].keys()))
-    # should print: ['contrast', 'dissimilarity', 'homogeneity', 'energy', 'correlation', 'asm']
+    print("key count:", len(data[0]))                # should be 26
+    print("first key:", list(data[0])[0])             # 'img_path'
+    print("last key:", list(data[0])[-1])             # 'label'
 ```
 
 ---
@@ -384,6 +403,6 @@ ModifV1_0_1_Correction/
 | POST   | `/label/<id>/delete`  | Remove an image (file + DB row)                   |
 | GET    | `/dataset`            | Dataset table with filters                        |
 | GET    | `/export`             | Export page                                       |
-| GET    | `/export/csv`         | CSV download (full / AI, GLCM included)           |
-| GET    | `/export/json`        | JSON download (full / AI, GLCM included)          |
+| GET    | `/export/csv`         | CSV download — 26 columns, `;` delimiter          |
+| GET    | `/export/json`        | JSON download — same 26 keys, flat structure      |
 | GET    | `/export/html`        | Self-contained HTML preview (image \| label)      |

@@ -6,12 +6,9 @@
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <h1 class="h4 mb-3">Export Dataset</h1>
-        <p class="text-muted small mb-4">
-            CSV uses UTF-8 with BOM for Excel compatibility.
-        </p>
 
-        {# One card per project. Each card pulls its own counts and emits
-           filenames like export_DR_full_<timestamp>.csv. #}
+        {# One card per project. Filenames embed the project name so DR
+           and SmartBin exports never get mixed up. #}
         {% for project_id in project_ids %}
             {% set project_counts = counts[project_id] %}
             {% set is_empty = project_counts.labeled == 0 %}
@@ -34,27 +31,15 @@
                         <div class="alert alert-warning">No labeled images in {{ project_id }} yet.</div>
                     {% endif %}
 
-                    <h3 class="h6 text-uppercase text-muted">CSV exports</h3>
+                    <h3 class="h6 text-uppercase text-muted">Data exports</h3>
                     <div class="d-grid gap-2 mb-3">
-                        <a href="{{ url_for('export.export_csv', project=project_id, format='full') }}"
+                        <a href="{{ url_for('export.export_csv', project=project_id) }}"
                            class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
-                            Export as CSV (full metadata)
+                            Export as CSV (26 columns, semicolon-separated)
                         </a>
-                        <a href="{{ url_for('export.export_csv', project=project_id, format='ai') }}"
-                           class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
-                            Export as CSV (AI training: image_path, label,contrast,dissimilarity,homogeneity,energy,correlation,asm)
-                        </a>
-                    </div>
-
-                    <h3 class="h6 text-uppercase text-muted">JSON exports</h3>
-                    <div class="d-grid gap-2 mb-3">
-                        <a href="{{ url_for('export.export_json', project=project_id, format='full') }}"
+                        <a href="{{ url_for('export.export_json', project=project_id) }}"
                            class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
-                            Export as JSON (full metadata)
-                        </a>
-                        <a href="{{ url_for('export.export_json', project=project_id, format='ai') }}"
-                           class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
-                            Export as JSON (AI training: image_path, label,contrast,dissimilarity,homogeneity,energy,correlation,asm)
+                            Export as JSON (same 26 keys)
                         </a>
                     </div>
 

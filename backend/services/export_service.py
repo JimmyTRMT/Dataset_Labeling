@@ -15,66 +15,56 @@ from backend.config import DISPLAY_TIMEZONE
 from backend.models.database import ImageRecord
 
 
-# GLCM is computed over one pixel of distance and four directions: 0, 45,
-# 90, and 135 degrees. Each property therefore comes back as a list of 4
-# values, one per direction.
+# GLCM is computed at one pixel of distance and four directions (0, 45, 90,
+# 135 degrees). Each property therefore yields four values, exposed as four
+# separate columns (e.g. con1, con2, con3, con4) so spreadsheets and ML
+# tools can read them directly without parsing list strings.
 GLCM_DISTANCES = [1]
 GLCM_ANGLES = [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4]
-# graycoprops accepts these property names verbatim. Lowercased equivalents
-# are used as dict keys / column names so they read like CSV headers.
-GLCM_PROPS: tuple[str, ...] = (
-    "contrast",
-    "dissimilarity",
-    "homogeneity",
-    "energy",
-    "correlation",
-    "ASM",
+# Each entry maps the column-name prefix used in the export to the property
+# name expected by skimage.graycoprops.
+GLCM_PROPS: tuple[tuple[str, str], ...] = (
+    ("con", "contrast"),
+    ("dis", "dissimilarity"),
+    ("hom", "homogeneity"),
+    ("ene", "energy"),
+    ("corr", "correlation"),
+    ("asm", "ASM"),
 )
-GLCM_FEATURE_KEYS: tuple[str, ...] = tuple(prop.lower() for prop in GLCM_PROPS)
+GLCM_DIRECTION_COUNT = 4
+GLCM_DECIMALS = 4
+
+# Final 26-column schema (img_path + 24 GLCM columns + label), in the exact
+# order requested by the researchers. Reused by both CSV and JSON writers.
+GLCM_COLUMNS: tuple[str, ...] = tuple(
+    f"{prefix}{direction}"
+    for prefix, _ in GLCM_PROPS
+    for direction in range(1, GLCM_DIRECTION_COUNT + 1)
+)
+EXPORT_COLUMNS: tuple[str, ...] = ("img_path", *GLCM_COLUMNS, "label")
+
+# CSV uses a semicolon delimiter so European spreadsheets (FR / IT / ES
+# Excel locales) open the file with one column per metric out of the box.
+CSV_DELIMITER = ";"
 
 
-# Full layout keeps every column the auditor might want, including project
-# and one column per GLCM feature.
-EXPORT_FIELDS_FULL = [
-    "id",
-    "original_filename",
-    "stored_filename",
-    "image_path",
-    "project",
-    "contributor",
-    "notes",
-    "label",
-    "status",
-    "uploaded_at",
-    "labeled_at",
-    *GLCM_FEATURE_KEYS,
-]
-
-# AI layout stays minimal but carries the GLCM features alongside the label,
-# so classical ML pipelines can train on the precomputed texture descriptors.
-EXPORT_FIELDS_AI = [
-    "image_path",
-    "label",
-    *GLCM_FEATURE_KEYS,
-]
+# Returns the fallback dict used when an image is missing or unreadable.
+# All 24 GLCM keys map to 0.0 so a single bad file never breaks an export.
+def _zero_glcm_features() -> dict[str, float]:
+    return {column: 0.0 for column in GLCM_COLUMNS}
 
 
-# _zero_features returns the fallback dict when an image is missing or
-# unreadable, so a single bad file never breaks an entire export.
-def _zero_features() -> dict[str, list[float]]:
-    return {key: [0.0, 0.0, 0.0, 0.0] for key in GLCM_FEATURE_KEYS}
-
-
-# extract_glcm_features reads one image, converts to grayscale, and computes
-# the 6 standard GLCM properties for the 4 reference angles. Output shape:
-# {"contrast": [v0, v45, v90, v135], "dissimilarity": [...], ...}.
-def extract_glcm_features(image_path: Path) -> dict[str, list[float]]:
+# Reads one image, converts it to grayscale, computes the GLCM at the four
+# reference angles, and returns a flat dict keyed by the 24 column names.
+# Any decoding or numpy error degrades to zero-filled features so the rest
+# of the export still completes.
+def extract_glcm_features(image_path: Path) -> dict[str, float]:
     if not image_path.exists():
-        return _zero_features()
+        return _zero_glcm_features()
     try:
         bgr_image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
         if bgr_image is None:
-            return _zero_features()
+            return _zero_glcm_features()
         grayscale = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
         glcm_matrix = graycomatrix(
             grayscale,
@@ -83,84 +73,67 @@ def extract_glcm_features(image_path: Path) -> dict[str, list[float]]:
             symmetric=True,
             normed=True,
         )
-        features: dict[str, list[float]] = {}
-        for prop, key in zip(GLCM_PROPS, GLCM_FEATURE_KEYS):
-            # graycoprops returns shape (len(distances), len(angles)).
-            # We only have one distance, so take row 0 -> 4 floats.
+        features: dict[str, float] = {}
+        for prefix, prop in GLCM_PROPS:
+            # graycoprops returns shape (len(distances), len(angles)). Only
+            # one distance, so row 0 holds the four direction values.
             angle_values = graycoprops(glcm_matrix, prop)[0]
-            features[key] = [round(float(value), 2) for value in angle_values]
+            for direction_index in range(GLCM_DIRECTION_COUNT):
+                column_name = f"{prefix}{direction_index + 1}"
+                features[column_name] = round(
+                    float(angle_values[direction_index]), GLCM_DECIMALS
+                )
         return features
     except Exception:
-        # Any decoding / numpy error falls back to zeros so the rest of the
-        # export still completes.
-        return _zero_features()
+        return _zero_glcm_features()
 
 
-# _format_feature_for_csv renders a 4-value list as the bracketed string the
-# spec wants in CSV cells, e.g. "[20.70, 31.68, 16.28, 30.71]".
-def _format_feature_for_csv(values: list[float]) -> str:
-    return "[" + ", ".join(f"{value:.2f}" for value in values) + "]"
+# Builds one row, in the canonical 26-column order, ready for the writer.
+def _build_export_row(image: ImageRecord, upload_path: Path) -> dict:
+    features = extract_glcm_features(upload_path / image.stored_filename)
+    row: dict = {"img_path": f"data/images/{image.stored_filename}"}
+    row.update(features)
+    row["label"] = image.label or ""
+    return row
 
 
-# build_csv_export writes a CSV containing only the rows for one project.
-# Every row also embeds GLCM texture features as bracketed strings.
+# Writes a CSV with the strict 26-column schema. The semicolon delimiter
+# means each metric lands in its own spreadsheet cell, no parsing required.
 def build_csv_export(
     images: Sequence[ImageRecord],
     export_folder: str,
     upload_folder: str,
     project: str,
-    export_format: str = "full",
 ) -> Path:
-    normalized_format = "ai" if export_format.lower().strip() == "ai" else "full"
-    selected_fields = EXPORT_FIELDS_FULL if normalized_format == "full" else EXPORT_FIELDS_AI
-
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    export_path = Path(export_folder) / f"export_{project}_{normalized_format}_{timestamp}.csv"
+    export_path = Path(export_folder) / f"export_{project}_{timestamp}.csv"
     upload_path = Path(upload_folder)
 
-    # utf-8-sig writes a BOM so Excel on Windows opens accented or non-Latin text correctly.
+    # utf-8-sig writes a BOM so Excel detects UTF-8 even when the system
+    # locale is non-UTF-8, which keeps Thai or accented labels readable.
     with export_path.open("w", newline="", encoding="utf-8-sig") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=selected_fields)
-        writer.writeheader()
+        writer = csv.writer(csv_file, delimiter=CSV_DELIMITER)
+        writer.writerow(EXPORT_COLUMNS)
         for image in images:
-            row = image.to_export_row()
-            features = extract_glcm_features(upload_path / image.stored_filename)
-            for key in GLCM_FEATURE_KEYS:
-                row[key] = _format_feature_for_csv(features[key])
-            writer.writerow({field: row.get(field, "") for field in selected_fields})
+            row = _build_export_row(image, upload_path)
+            writer.writerow([row[column] for column in EXPORT_COLUMNS])
 
     return export_path
 
 
-# build_json_export mirrors the CSV builder but emits JSON. Each entry gets
-# a `features` dict so the GLCM values stay queryable as proper lists.
+# Writes a JSON array using the same 26 keys as the CSV. Numbers stay as
+# JSON numbers (not strings) so pandas / numpy can consume them directly.
 def build_json_export(
     images: Sequence[ImageRecord],
     export_folder: str,
     upload_folder: str,
     project: str,
-    export_format: str = "full",
 ) -> Path:
-    normalized_format = "ai" if export_format.lower().strip() == "ai" else "full"
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    export_path = Path(export_folder) / f"export_{project}_{normalized_format}_{timestamp}.json"
+    export_path = Path(export_folder) / f"export_{project}_{timestamp}.json"
     upload_path = Path(upload_folder)
 
-    payload: list[dict] = []
-    for image in images:
-        features = extract_glcm_features(upload_path / image.stored_filename)
-        if normalized_format == "ai":
-            payload.append(
-                {
-                    "image_path": image.to_export_row()["image_path"],
-                    "label": image.label or "",
-                    "features": features,
-                }
-            )
-        else:
-            entry = image.to_export_row()
-            entry["features"] = features
-            payload.append(entry)
+    payload = [_build_export_row(image, upload_path) for image in images]
 
     with export_path.open("w", encoding="utf-8") as json_file:
         json.dump(payload, json_file, ensure_ascii=False, indent=2)
@@ -168,9 +141,9 @@ def build_json_export(
     return export_path
 
 
-# build_html_export writes a single self-contained HTML file: a 2-column
-# table with the image on the left and its label on the right. Images are
-# embedded as base64 so the file works offline, with no companion folder.
+# Writes a single self-contained HTML file: a 2-column table with the image
+# on the left and its label on the right. Images are embedded as base64 so
+# the file works offline, with no companion folder.
 def build_html_export(
     images: Sequence[ImageRecord],
     export_folder: str,
@@ -186,8 +159,8 @@ def build_html_export(
         data_url = _encode_image_as_data_url(upload_path / image.stored_filename)
         label = html.escape(image.label or "")
         original = html.escape(image.original_filename or "")
-        # If the file is missing on disk we still emit the row but show a
-        # placeholder, so the export reflects the DB faithfully.
+        # Emit the row even when the file is gone so the HTML matches the DB
+        # exactly; a placeholder cell flags the missing bytes.
         image_cell = (
             f'<img src="{data_url}" alt="{original}">'
             if data_url
@@ -253,9 +226,9 @@ def build_html_export(
     return export_path
 
 
-# _encode_image_as_data_url reads an image file and returns it as a base64
-# data URL ready to drop into an <img src="...">. Returns "" when the file
-# is missing or unreadable so the caller can render a placeholder cell.
+# Reads an image and returns it as a base64 data URL ready to drop into an
+# <img src="...">. Returns "" when the file is missing or unreadable so
+# the caller can render a placeholder cell.
 def _encode_image_as_data_url(image_path: Path) -> str:
     if not image_path.exists():
         return ""

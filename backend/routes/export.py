@@ -71,8 +71,9 @@ def _labeled_images_or_redirect():
     return (project, labeled_images), None
 
 
-# Exports labeled images of one project as CSV (full or AI layout). GLCM
-# texture features are computed at write time and embedded in each row.
+# Exports labeled images of one project as CSV. The file follows the
+# strict 26-column schema (img_path + 24 GLCM features + label) with a
+# semicolon delimiter so European spreadsheets open it directly.
 @export_bp.get("/export/csv")
 def export_csv():
     payload, redirect_response = _labeled_images_or_redirect()
@@ -80,14 +81,12 @@ def export_csv():
         return redirect_response
 
     project, labeled_images = payload
-    export_format = request.args.get("format", "full").strip().lower()
     try:
         export_path = build_csv_export(
             labeled_images,
             current_app.config["EXPORT_FOLDER"],
             current_app.config["UPLOAD_FOLDER"],
             project=project,
-            export_format=export_format,
         )
     except OSError:
         current_app.logger.exception("CSV export failed for project %s", project)
@@ -121,8 +120,8 @@ def export_html():
     return send_file(export_path, as_attachment=True)
 
 
-# Exports labeled images of one project as JSON (full or AI layout). Each
-# entry includes a `features` dict carrying the GLCM texture descriptors.
+# Exports labeled images of one project as JSON. Each entry is a flat dict
+# with the same 26 keys as the CSV (img_path, con1..corr4, asm1..asm4, label).
 @export_bp.get("/export/json")
 def export_json():
     payload, redirect_response = _labeled_images_or_redirect()
@@ -130,14 +129,12 @@ def export_json():
         return redirect_response
 
     project, labeled_images = payload
-    export_format = request.args.get("format", "full").strip().lower()
     try:
         export_path = build_json_export(
             labeled_images,
             current_app.config["EXPORT_FOLDER"],
             current_app.config["UPLOAD_FOLDER"],
             project=project,
-            export_format=export_format,
         )
     except OSError:
         current_app.logger.exception("JSON export failed for project %s", project)
