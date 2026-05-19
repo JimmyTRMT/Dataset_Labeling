@@ -31,10 +31,23 @@ def label_page():
     )
 
     current_image = None
+    current_index = -1
     if selected_id is not None:
-        current_image = next((img for img in unlabeled_images if img.id == selected_id), None)
+        for index, image in enumerate(unlabeled_images):
+            if image.id == selected_id:
+                current_image = image
+                current_index = index
+                break
     if current_image is None and unlabeled_images:
         current_image = unlabeled_images[0]
+        current_index = 0
+
+    # The Skip button advances to the next image in upload order, wrapping
+    # to the first one once we reach the end. We compute this server-side
+    # so the template stays declarative.
+    next_image = None
+    if len(unlabeled_images) > 1 and current_index >= 0:
+        next_image = unlabeled_images[(current_index + 1) % len(unlabeled_images)]
 
     if current_image:
         # Reset on every page load so refresh / tab-switch don't inflate
@@ -59,6 +72,7 @@ def label_page():
     return render_template(
         "label.html",
         current_image=current_image,
+        next_image=next_image,
         unlabeled_images=unlabeled_images,
         available_labels=available_labels,
         total_count=total_count,

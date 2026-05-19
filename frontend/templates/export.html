@@ -1,61 +1,58 @@
 {% extends "base.html" %}
 {% set active_page = 'export' %}
-{% block title %}Export - Dataset Labeling Tool{% endblock %}
+{% block title %}Export - Dataset Labeling Platform{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <h1 class="h4 mb-3">Export Dataset</h1>
+<div class="max-w-3xl mx-auto space-y-6">
 
-        {# One card per project. Filenames embed the project name so DR
-           and SmartBin exports never get mixed up. #}
-        {% for project_id in project_ids %}
-            {% set project_counts = counts[project_id] %}
-            {% set is_empty = project_counts.labeled == 0 %}
-            <div class="card shadow-sm mb-4">
-                <div class="card-body">
-                    <h2 class="h5 mb-3">{{ project_id }} project</h2>
+    <header>
+        <h1 class="text-2xl font-semibold text-slate-100">Export Dataset</h1>
+    </header>
 
-                    <ul class="list-group list-group-flush mb-3">
-                        <li class="list-group-item d-flex justify-content-between">
-                            <span>Total images</span>
-                            <strong>{{ project_counts.total }}</strong>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between">
-                            <span>Labeled (exportable)</span>
-                            <strong class="text-success">{{ project_counts.labeled }}</strong>
-                        </li>
-                    </ul>
+    {# One card per project. Filenames embed the project name so DR and
+       SmartBin downloads never get mixed up in the same folder. #}
+    {% for project_id in project_ids %}
+        {% set project_counts = counts[project_id] %}
+        {% set is_empty = project_counts.labeled == 0 %}
+        <section class="bg-slate-800 border border-slate-700 rounded-xl p-6">
+            <h2 class="text-lg font-semibold text-slate-100 mb-4">{{ project_id }} project</h2>
 
-                    {% if is_empty %}
-                        <div class="alert alert-warning">No labeled images in {{ project_id }} yet.</div>
-                    {% endif %}
-
-                    <h3 class="h6 text-uppercase text-muted">Data exports</h3>
-                    <div class="d-grid gap-2 mb-3">
-                        <a href="{{ url_for('export.export_csv', project=project_id) }}"
-                           class="btn btn-outline-success {% if is_empty %}disabled{% endif %}">
-                            Export as CSV (26 columns, semicolon-separated)
-                        </a>
-                        <a href="{{ url_for('export.export_json', project=project_id) }}"
-                           class="btn btn-outline-primary {% if is_empty %}disabled{% endif %}">
-                            Export as JSON (same 26 keys)
-                        </a>
-                    </div>
-
-                    {# Visual export: one self-contained HTML file with a
-                       2-column table (image | label). Images are embedded
-                       as base64 so the file works offline, no folder needed. #}
-                    <h3 class="h6 text-uppercase text-muted">Visual export</h3>
-                    <div class="d-grid gap-2">
-                        <a href="{{ url_for('export.export_html', project=project_id) }}"
-                           class="btn btn-warning text-dark {% if is_empty %}disabled{% endif %}">
-                            Export as HTML (image | label table)
-                        </a>
-                    </div>
+            <div class="grid grid-cols-2 gap-3 mb-5">
+                <div class="bg-slate-900 border border-slate-700 rounded-lg p-3">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Total images</p>
+                    <p class="text-2xl font-semibold text-slate-100 mt-1">{{ project_counts.total }}</p>
+                </div>
+                <div class="bg-slate-900 border border-slate-700 rounded-lg p-3">
+                    <p class="text-xs uppercase tracking-wider text-slate-400">Labeled (exportable)</p>
+                    <p class="text-2xl font-semibold text-emerald-400 mt-1">{{ project_counts.labeled }}</p>
                 </div>
             </div>
-        {% endfor %}
-    </div>
+
+            {% if is_empty %}
+                <div class="mb-4 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm">
+                    No labeled images in {{ project_id }} yet.
+                </div>
+            {% endif %}
+
+            <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Data exports</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                <a href="{{ url_for('export.export_csv', project=project_id) }}"
+                   class="px-4 py-2.5 text-center rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 transition-colors {% if is_empty %}pointer-events-none opacity-40{% endif %}">
+                    Export as CSV
+                </a>
+                <a href="{{ url_for('export.export_json', project=project_id) }}"
+                   class="px-4 py-2.5 text-center rounded-lg border border-sky-500/40 text-sky-300 hover:bg-sky-500/10 transition-colors {% if is_empty %}pointer-events-none opacity-40{% endif %}">
+                    Export as JSON
+                </a>
+            </div>
+
+            <p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Visual export</p>
+            <a href="{{ url_for('export.export_html', project=project_id) }}"
+               class="block px-4 py-2.5 text-center rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 transition-colors {% if is_empty %}pointer-events-none opacity-40{% endif %}">
+                Export as HTML (image &middot; label)
+            </a>
+        </section>
+    {% endfor %}
+
 </div>
 {% endblock %}

@@ -1,16 +1,14 @@
 {% extends "base.html" %}
-{% block title %}500 - Server Error{% endblock %}
+{% block title %}500 - Server error{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-7 col-lg-6">
-        <div class="card shadow-sm">
-            <div class="card-body text-center p-4">
-                <h1 class="h3">500 - Internal Error</h1>
-                <p class="text-muted">A server error occurred. Please try again in a moment.</p>
-                <a href="{{ url_for('home') }}" class="btn btn-primary">Back to Home</a>
-            </div>
-        </div>
-    </div>
+<div class="max-w-md mx-auto bg-slate-800 border border-slate-700 rounded-xl p-8 text-center mt-12">
+    <p class="text-rose-400 font-mono text-sm tracking-widest">ERROR 500</p>
+    <h1 class="text-2xl font-semibold text-slate-100 mt-2">Internal error</h1>
+    <p class="text-slate-400 mt-2">Something went wrong on the server. Please try again in a moment.</p>
+    <a href="{{ url_for('home') }}"
+       class="inline-block mt-6 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium text-white transition-colors">
+        Back to Home
+    </a>
 </div>
 {% endblock %}

@@ -119,19 +119,21 @@ For local development:
 python -m backend
 ```
 
-For a real deployment on Windows (using waitress, no extra config needed):
+For a LAN production deployment on Windows (recommended — exposes the app on every interface, port 8080, with an auto-detected LAN URL printed in the terminal):
 
 ```
-waitress-serve --host=0.0.0.0 --port=8000 backend.app:app
+python run_server.py
 ```
 
-For Linux (using gunicorn, behind nginx or Caddy):
+The script forces `FLASK_DEBUG=false`, starts waitress, and prints both the loopback URL and the LAN URL so colleagues on the same Wi-Fi can connect immediately.
+
+For Linux behind nginx / Caddy:
 
 ```
 gunicorn "backend.app:app" -b 0.0.0.0:8000 -w 4
 ```
 
-Open http://127.0.0.1:5000 (or the port you configured) in a browser.
+Open http://127.0.0.1:5000 (dev) or http://127.0.0.1:8080 (run_server.py) in a browser.
 
 ### What you should see
 
@@ -366,8 +368,8 @@ ModifV1_0_1_Correction/
 ├── frontend/
 │   ├── templates/             # base.html, index.html, upload.html, label.html, dashboard.html, export.html, errors/
 │   └── static/
-│       ├── css/app.css        # custom styles on top of Bootstrap
-│       └── js/                # labeling.js, dataset.js, upload.js
+│       ├── css/app.css        # custom styles on top of Tailwind (image viewer, label-card states)
+│       └── js/                # labeling.js (zoom/pan/rotate), upload.js (dropzone), dataset.js
 │
 ├── database/
 │   ├── schema.sql             # reference SQL (informational)
@@ -382,6 +384,7 @@ ModifV1_0_1_Correction/
 │   ├── setup.md               # alternative install walk-through
 │   └── screenshots/           # UI captures for the report
 │
+├── run_server.py              # LAN production launcher (waitress + auto-IP)
 ├── requirements.txt           # 10 pinned dependencies
 ├── README.md                  # quick start + features
 ├── TECHNICAL_GUIDE.md         # this file

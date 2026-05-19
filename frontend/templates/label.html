@@ -1,113 +1,164 @@
 {% extends "base.html" %}
 {% set active_page = 'label' %}
-{% block title %}Label - Dataset Labeling Tool{% endblock %}
+{% block title %}Label - Dataset Labeling Platform{% endblock %}
 
 {% block content %}
-<div class="row g-4">
-    <div class="col-lg-4">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h2 class="h5">Progress</h2>
-                <p class="mb-2"><strong>{{ labeled_count }}/{{ total_count }}</strong> labeled images</p>
-                {% set progress = (labeled_count / total_count * 100) | round | int if total_count > 0 else 0 %}
-                <div class="progress mb-3" role="progressbar" aria-label="Labeling progress" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
-                    <div class="progress-bar" style="width: {{ progress }}%">{{ progress }}%</div>
+{% if current_image %}
+    {# Split-screen labeling: 70% interactive viewer | 30% control panel. #}
+    <div class="grid grid-cols-1 lg:grid-cols-10 gap-6 items-start">
+
+        {# LEFT 70% : Image viewer with Viewer.js #}
+        <section class="lg:col-span-7 space-y-3">
+            <div class="flex items-center justify-between text-sm text-slate-400">
+                <div class="flex items-center gap-3">
+                    <span>Image ID: <strong class="text-slate-100">{{ current_image.id }}</strong></span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                        {{ current_image.project }}
+                    </span>
                 </div>
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item d-flex justify-content-between">
-                        <span>Unlabeled</span>
-                        <strong>{{ unlabeled_count }}</strong>
-                    </li>
-                    <li class="list-group-item d-flex justify-content-between">
-                        <span>Labeled</span>
-                        <strong>{{ labeled_count }}</strong>
-                    </li>
-                </ul>
-                <a href="{{ url_for('label.dataset_browser') }}" class="btn btn-outline-primary w-100 mt-3">View Dataset</a>
-                <a href="{{ url_for('export.export_page') }}" class="btn btn-outline-success w-100 mt-2">Export Data</a>
+                <span class="truncate max-w-[40ch]">
+                    {{ current_image.original_filename }}{% if current_image.contributor %} - by {{ current_image.contributor }}{% endif %}
+                </span>
             </div>
-        </div>
-    </div>
 
-    <div class="col-lg-8">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h1 class="h4 mb-3">Labeling</h1>
+            {# Exactly ONE <img> sits in the frame. Position + transform are
+               managed by labeling.js — no library, no duplicate node. #}
+            <div id="image-viewer-frame" class="relative bg-black border border-slate-700 rounded-xl overflow-hidden image-viewer-frame">
+                <img id="main-image"
+                     src="{{ url_for('upload.serve_image', filename=current_image.stored_filename) }}"
+                     alt="{{ current_image.original_filename }}"
+                     title="{{ current_image.original_filename }}"
+                     class="image-canvas select-none">
+            </div>
 
-                {% if current_image %}
-                    {# Showing the project name above the image makes it
-                       obvious which label set is being applied right now. #}
-                    <p class="text-muted mb-1">
-                        Image ID: <strong>{{ current_image.id }}</strong>
-                        &middot; Project: <span class="badge bg-info text-dark">{{ current_image.project }}</span>
-                    </p>
-                    <p class="small text-muted">{{ current_image.original_filename }}{% if current_image.contributor %} - by {{ current_image.contributor }}{% endif %}</p>
+            {# Discrete viewer controls placed below the image. Viewer.js
+               handles wheel-zoom and drag natively; these expose the
+               rotate / flip actions that don't have keyboard shortcuts. #}
+            <div class="flex flex-wrap justify-center gap-2 text-sm">
+                <button type="button" id="rotate-left"
+                        class="px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700 rounded-lg text-slate-200 transition-colors">
+                    &#x21BA; Rotate left
+                </button>
+                <button type="button" id="rotate-right"
+                        class="px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700 rounded-lg text-slate-200 transition-colors">
+                    Rotate right &#x21BB;
+                </button>
+                <button type="button" id="flip-horizontal"
+                        class="px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700 rounded-lg text-slate-200 transition-colors">
+                    &#x2194; Flip H
+                </button>
+                <button type="button" id="flip-vertical"
+                        class="px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700 rounded-lg text-slate-200 transition-colors">
+                    &#x2195; Flip V
+                </button>
+                <button type="button" id="reset-view"
+                        class="px-3 py-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700 rounded-lg text-slate-200 transition-colors">
+                    Reset
+                </button>
+                <span class="text-xs text-slate-500 self-center ml-2">
+                    Mouse wheel to zoom &middot; click &amp; drag to pan
+                </span>
+            </div>
+        </section>
 
-                    <div class="text-center mb-3">
-                        <img src="{{ url_for('upload.serve_image', filename=current_image.stored_filename) }}"
-                             id="main-image"
-                             class="img-fluid rounded border preview-image"
-                             alt="Image to label">
-                    </div>
+        {# RIGHT 30% : Control panel - progress, label cards, actions. #}
+        <aside class="lg:col-span-3 space-y-4 lg:sticky lg:top-20">
 
-                    <form method="POST" action="{{ url_for('label.assign_label', image_id=current_image.id) }}" id="label-form">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="label" id="selected-label-input" value="">
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                <div class="flex justify-between text-sm mb-2">
+                    <span class="text-slate-300">Progress</span>
+                    <span class="text-slate-400">{{ labeled_count }}/{{ total_count }}</span>
+                </div>
+                {% set progress = (labeled_count / total_count * 100) | round | int if total_count > 0 else 0 %}
+                <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div id="progress-fill" class="h-full bg-emerald-500 transition-all" data-progress="{{ progress }}"></div>
+                </div>
+                <div class="text-xs text-slate-400 mt-1 text-right">{{ progress }}%</div>
+            </div>
 
-                        <p class="fw-semibold mb-2">Select Label:</p>
-                        <div class="d-flex flex-wrap gap-2 mb-3" id="label-options">
-                            {% for lbl in available_labels %}
-                                <button type="button" class="btn btn-outline-primary flex-fill label-option-btn" data-label="{{ lbl }}">
-                                    {{ lbl }}
+            <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
+                <p class="text-sm font-semibold text-slate-200">Select label</p>
+
+                <form method="POST" action="{{ url_for('label.assign_label', image_id=current_image.id) }}" id="label-form" class="space-y-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="label" id="selected-label-input" value="">
+
+                    {# Big card-style label buttons. The selected card flips
+                       to the emerald accent via labeling.js. #}
+                    <div id="label-options" class="space-y-2">
+                        {% for lbl in available_labels %}
+                            <button type="button" data-label="{{ lbl }}"
+                                    class="label-card w-full text-left p-3 rounded-lg border border-slate-700 bg-slate-900 hover:border-emerald-500 hover:bg-slate-800 transition-colors">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-sm font-medium text-slate-100">{{ lbl }}</span>
                                     {% if loop.index <= 9 %}
-                                        <span class="badge bg-secondary ms-2">{{ loop.index }}</span>
+                                        <kbd class="text-xs font-mono text-slate-400 bg-slate-950 border border-slate-700 px-1.5 py-0.5 rounded">
+                                            {{ loop.index }}
+                                        </kbd>
                                     {% endif %}
-                                </button>
-                            {% endfor %}
-                        </div>
-
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary flex-fill" id="save-label-btn" disabled>Save Label</button>
-                            {% if unlabeled_images|length > 1 %}
-                                {% set next_image = unlabeled_images|rejectattr('id', 'equalto', current_image.id)|list|first %}
-                                {% if next_image %}
-                                    <a href="{{ url_for('label.label_page', image_id=next_image.id) }}" class="btn btn-outline-secondary">Skip</a>
-                                {% endif %}
-                            {% endif %}
-                        </div>
-                    </form>
-
-                    <form method="POST" action="{{ url_for('label.delete_image', image_id=current_image.id) }}" class="mt-2" id="delete-form">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-outline-danger w-100">Delete this image</button>
-                    </form>
-
-                    {% if unlabeled_images|length > 1 %}
-                        <hr>
-                        <h3 class="h6">Pending images</h3>
-                        <div class="row row-cols-3 row-cols-md-4 g-2">
-                            {% for image in unlabeled_images %}
-                                <div class="col">
-                                    <a href="{{ url_for('label.label_page', image_id=image.id) }}" class="d-block border rounded p-1 {% if image.id == current_image.id %}border-primary{% endif %}">
-                                        <img src="{{ url_for('upload.serve_image', filename=image.stored_filename) }}"
-                                             class="img-fluid rounded thumb-image"
-                                             alt="{{ image.original_filename }}">
-                                    </a>
                                 </div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                {% else %}
-                    <div class="alert alert-success mb-0">
-                        <p class="mb-2">All images have been labeled.</p>
-                        <a href="{{ url_for('upload.upload_page') }}" class="btn btn-primary me-2">Upload more</a>
-                        <a href="{{ url_for('export.export_page') }}" class="btn btn-success">Export Dataset</a>
+                            </button>
+                        {% endfor %}
                     </div>
-                {% endif %}
+
+                    <div class="pt-2 flex gap-2">
+                        <button type="submit" id="save-label-btn" disabled
+                                class="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed rounded-lg font-medium text-white transition-colors">
+                            Save &amp; Next
+                        </button>
+                        {% if next_image %}
+                            <a href="{{ url_for('label.label_page', image_id=next_image.id) }}"
+                               class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium text-slate-200 transition-colors">
+                                Skip
+                            </a>
+                        {% endif %}
+                    </div>
+                </form>
+
+                <form method="POST" action="{{ url_for('label.delete_image', image_id=current_image.id) }}" id="delete-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit"
+                            class="w-full px-4 py-2 bg-rose-600/15 hover:bg-rose-600/25 border border-rose-600/40 hover:border-rose-500 rounded-lg text-sm text-rose-300 hover:text-rose-200 transition-colors">
+                        Delete this image
+                    </button>
+                </form>
             </div>
+
+            {% if unlabeled_images|length > 1 %}
+                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                    <p class="text-sm font-semibold text-slate-200 mb-3">Pending images</p>
+                    <div class="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                        {% for image in unlabeled_images %}
+                            <a href="{{ url_for('label.label_page', image_id=image.id) }}"
+                               class="block rounded overflow-hidden border transition-colors
+                                      {% if image.id == current_image.id %}border-emerald-500{% else %}border-slate-700 hover:border-emerald-500{% endif %}">
+                                <img src="{{ url_for('upload.serve_image', filename=image.stored_filename) }}"
+                                     class="w-full h-16 object-cover"
+                                     alt="{{ image.original_filename }}">
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+
+        </aside>
+    </div>
+{% else %}
+    <div class="max-w-xl mx-auto bg-slate-800 border border-slate-700 rounded-xl p-8 text-center">
+        <p class="text-emerald-400 text-lg font-semibold mb-2">All images have been labeled.</p>
+        <p class="text-slate-400 mb-6">Upload more or download the dataset.</p>
+        <div class="flex justify-center gap-3">
+            <a href="{{ url_for('upload.upload_page') }}"
+               class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium text-white transition-colors">
+                Upload more
+            </a>
+            <a href="{{ url_for('export.export_page') }}"
+               class="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg font-medium text-slate-100 transition-colors">
+                Export Dataset
+            </a>
         </div>
     </div>
-</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

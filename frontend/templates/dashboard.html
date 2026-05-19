@@ -1,69 +1,78 @@
 {% extends "base.html" %}
 {% set active_page = 'dataset' %}
-{% block title %}Dataset - Dataset Labeling Tool{% endblock %}
+{% block title %}Dataset - Dataset Labeling Platform{% endblock %}
 
 {% block content %}
-<div class="card shadow-sm">
-    <div class="card-body">
-        <div class="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
-            <h1 class="h4 mb-0">Dataset</h1>
+<div class="space-y-6">
 
-            {# Two independent filter groups: project, then status. Each link
-               keeps the other filter intact so users can stack them. #}
-            <div class="d-flex flex-wrap gap-2">
-                <div class="btn-group btn-group-sm" role="group" aria-label="Project filter">
-                    <a href="{{ url_for('label.dataset_browser', filter=active_filter, project='all') }}"
-                       class="btn btn-outline-secondary {% if active_project == 'all' %}active{% endif %}">All projects</a>
-                    {% for project_id in project_ids %}
-                        <a href="{{ url_for('label.dataset_browser', filter=active_filter, project=project_id) }}"
-                           class="btn btn-outline-secondary {% if active_project == project_id %}active{% endif %}">{{ project_id }}</a>
-                    {% endfor %}
-                </div>
-                <div class="btn-group btn-group-sm" role="group" aria-label="Status filter">
-                    <a href="{{ url_for('label.dataset_browser', filter='all', project=active_project) }}"
-                       class="btn btn-outline-secondary {% if active_filter == 'all' %}active{% endif %}">All</a>
-                    <a href="{{ url_for('label.dataset_browser', filter='labeled', project=active_project) }}"
-                       class="btn btn-outline-secondary {% if active_filter == 'labeled' %}active{% endif %}">Labeled</a>
-                    <a href="{{ url_for('label.dataset_browser', filter='unlabeled', project=active_project) }}"
-                       class="btn btn-outline-secondary {% if active_filter == 'unlabeled' %}active{% endif %}">Unlabeled</a>
-                </div>
+    <header class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-semibold text-slate-100">Dataset</h1>
+
+        {# Two orthogonal filter groups: project + status. Each link
+           preserves the other filter so they stack via the URL. #}
+        <div class="flex flex-wrap gap-2">
+            <div class="inline-flex rounded-lg overflow-hidden border border-slate-700 text-sm">
+                <a href="{{ url_for('label.dataset_browser', filter=active_filter, project='all') }}"
+                   class="px-3 py-1.5 {% if active_project == 'all' %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-300 hover:bg-slate-700{% endif %} transition-colors">All projects</a>
+                {% for project_id in project_ids %}
+                    <a href="{{ url_for('label.dataset_browser', filter=active_filter, project=project_id) }}"
+                       class="px-3 py-1.5 border-l border-slate-700 {% if active_project == project_id %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-300 hover:bg-slate-700{% endif %} transition-colors">{{ project_id }}</a>
+                {% endfor %}
+            </div>
+            <div class="inline-flex rounded-lg overflow-hidden border border-slate-700 text-sm">
+                <a href="{{ url_for('label.dataset_browser', filter='all', project=active_project) }}"
+                   class="px-3 py-1.5 {% if active_filter == 'all' %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-300 hover:bg-slate-700{% endif %} transition-colors">All</a>
+                <a href="{{ url_for('label.dataset_browser', filter='labeled', project=active_project) }}"
+                   class="px-3 py-1.5 border-l border-slate-700 {% if active_filter == 'labeled' %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-300 hover:bg-slate-700{% endif %} transition-colors">Labeled</a>
+                <a href="{{ url_for('label.dataset_browser', filter='unlabeled', project=active_project) }}"
+                   class="px-3 py-1.5 border-l border-slate-700 {% if active_filter == 'unlabeled' %}bg-emerald-600 text-white{% else %}bg-slate-800 text-slate-300 hover:bg-slate-700{% endif %} transition-colors">Unlabeled</a>
             </div>
         </div>
+    </header>
 
-        {% if images %}
-            <div class="table-responsive">
-                <table class="table table-sm align-middle">
-                    <thead>
+    {% if images %}
+        <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs uppercase tracking-wider text-slate-400 bg-slate-900/50 border-b border-slate-700">
                         <tr>
-                            <th>Filename</th>
-                            <th>Project</th>
-                            <th>Contributor</th>
-                            <th>Label</th>
-                            <th>Upload date</th>
-                            <th>Actions</th>
+                            <th class="px-4 py-3">Filename</th>
+                            <th class="px-4 py-3">Project</th>
+                            <th class="px-4 py-3">Contributor</th>
+                            <th class="px-4 py-3">Label</th>
+                            <th class="px-4 py-3">Upload date</th>
+                            <th class="px-4 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for image in images %}
-                            <tr>
-                                <td><span class="text-break">{{ image.original_filename }}</span></td>
-                                <td><span class="badge bg-info text-dark">{{ image.project }}</span></td>
-                                <td>{{ image.contributor or '-' }}</td>
-                                <td>
+                            <tr class="border-b border-slate-700/50 last:border-0 hover:bg-slate-700/20 transition-colors">
+                                <td class="px-4 py-3 text-slate-200 break-all">{{ image.original_filename }}</td>
+                                <td class="px-4 py-3">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                        {{ image.project }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-slate-300">{{ image.contributor or '-' }}</td>
+                                <td class="px-4 py-3">
                                     {% if image.status == 'labeled' %}
-                                        <span class="badge bg-success">{{ image.label }}</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-600 text-white">{{ image.label }}</span>
                                     {% else %}
-                                        <span class="badge bg-warning text-dark">Unlabeled</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40">Unlabeled</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ image.uploaded_at | local_time }}</td>
-                                <td class="text-end">
+                                <td class="px-4 py-3 text-slate-400">{{ image.uploaded_at | local_time }}</td>
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
                                     {% if image.status == 'unlabeled' %}
-                                        <a href="{{ url_for('label.label_page', image_id=image.id) }}" class="btn btn-sm btn-primary">Label</a>
+                                        <a href="{{ url_for('label.label_page', image_id=image.id) }}"
+                                           class="inline-block px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded transition-colors">Label</a>
                                     {% endif %}
-                                    <form method="POST" action="{{ url_for('label.delete_image', image_id=image.id) }}" class="d-inline delete-image-form">
+                                    <form method="POST" action="{{ url_for('label.delete_image', image_id=image.id) }}" class="inline delete-image-form">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                        <button type="submit"
+                                                class="px-2.5 py-1 bg-rose-600/15 hover:bg-rose-600/30 border border-rose-600/40 hover:border-rose-500 text-rose-300 hover:text-rose-200 text-xs rounded transition-colors">
+                                            Delete
+                                        </button>
                                     </form>
                                 </td>
                             </tr>
@@ -71,18 +80,19 @@
                     </tbody>
                 </table>
             </div>
-        {% else %}
-            <div class="alert alert-info mb-0">
-                {% if active_filter == 'labeled' %}
-                    No labeled images for this filter yet. <a href="{{ url_for('label.label_page') }}">Start labeling</a>.
-                {% elif active_filter == 'unlabeled' %}
-                    No unlabeled images for this filter. <a href="{{ url_for('upload.upload_page') }}">Upload more</a>.
-                {% else %}
-                    No images for this filter yet. <a href="{{ url_for('upload.upload_page') }}">Upload your first image</a>.
-                {% endif %}
-            </div>
-        {% endif %}
-    </div>
+        </div>
+    {% else %}
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-8 text-center text-slate-400">
+            {% if active_filter == 'labeled' %}
+                No labeled images for this filter yet. <a href="{{ url_for('label.label_page') }}" class="text-emerald-400 hover:text-emerald-300">Start labeling</a>.
+            {% elif active_filter == 'unlabeled' %}
+                No unlabeled images for this filter. <a href="{{ url_for('upload.upload_page') }}" class="text-emerald-400 hover:text-emerald-300">Upload more</a>.
+            {% else %}
+                No images for this filter yet. <a href="{{ url_for('upload.upload_page') }}" class="text-emerald-400 hover:text-emerald-300">Upload your first image</a>.
+            {% endif %}
+        </div>
+    {% endif %}
+
 </div>
 {% endblock %}
 

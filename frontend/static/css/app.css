@@ -1,24 +1,66 @@
-body {
-    min-height: 100vh;
+/* Tailwind handles almost everything via utility classes. The rules below
+   are for what Tailwind cannot cover cleanly: third-party container sizes,
+   selected-state overrides, and dynamic widths driven by data-attributes. */
+
+/* Fixed-height frame that wraps the labeling image. The frame is
+   `position: relative` (via Tailwind class on the element) so the
+   image inside can be absolutely centered with translate(-50%, -50%). */
+.image-viewer-frame {
+    height: 600px;
 }
 
-.preview-image {
-    max-height: 38.75rem;
-    object-fit: contain;
+/* The image lives directly inside the frame and is positioned at the
+   centre via absolute positioning. labeling.js then layers pan / zoom /
+   rotate / flip on top via CSS transforms. */
+.image-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 100%;
+    max-height: 100%;
+    cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+    /* Native drag is also prevented in JS, but this stops Firefox from
+       starting a drag preview during a pan gesture. */
+    -webkit-user-drag: none;
 }
 
-.thumb-image {
-    height: 4rem;
-    width: 4rem;
-    object-fit: cover;
+.image-canvas.is-dragging {
+    cursor: grabbing;
 }
 
+/* Progress bar fill - width is set from a data-progress attribute by
+   labeling.js, so the template stays free of inline styles. */
+#progress-fill {
+    width: 0%;
+}
+
+/* Selected state for the big label cards on the labeling page. The class
+   is toggled by labeling.js when the user picks a label. */
+.label-card.selected {
+    background-color: rgb(5 150 105);    /* emerald-600 */
+    border-color: rgb(52 211 153);       /* emerald-400 */
+    color: white;
+    box-shadow: 0 0 0 2px rgb(52 211 153 / 0.4);
+}
+
+.label-card.selected kbd {
+    background-color: rgb(2 44 34);
+    color: rgb(167 243 208);
+    border-color: rgb(5 150 105);
+}
+
+/* Dropzone visual feedback when a file is being dragged over it. The
+   active class is toggled by upload.js. */
+#dropzone.is-dragover {
+    background-color: rgb(5 150 105 / 0.12);
+    border-color: rgb(52 211 153);
+}
+
+/* Pulse the Save button briefly when the form submits, to acknowledge
+   the click before the navigation happens. */
 .label-submit-pulse {
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-.label-option-btn.selected {
-    color: #fff;
-    background-color: var(--bs-primary);
-    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 4px rgb(52 211 153 / 0.35);
 }
