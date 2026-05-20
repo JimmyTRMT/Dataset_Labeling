@@ -168,3 +168,16 @@ Project IDs and label sets are defined in `backend/config.py` (`PROJECT_IDS`, `P
 - [`docs/setup.md`](docs/setup.md) — alternative install walk-through with troubleshooting
 - [`docs/architecture.md`](docs/architecture.md) — layered overview with diagram
 - [`database/schema.sql`](database/schema.sql) — reference SQL schema
+
+## ⚖️ Copyright and Intellectual Property
+
+This project was developed by **Jimmy TREMOUILLAULT** as part of an international internship in collaboration with **Kasetsart University** (Sakon Nakhon/Bangkok, Thailand).
+
+* **Author:** Jimmy TREMOUILLAULT
+* **Institution:** Kasetsart University
+* **Year:** 2026
+
+⚠️ **Strict Restrictions:**
+All rights reserved. This software, including its source code, user interface, database schemas, and documentation, is the intellectual property of the author and Kasetsart University. 
+
+**Any unauthorized copy, modification, distribution, or commercial use of this platform without explicit prior written consent is strictly prohibited.**
