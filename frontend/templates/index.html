@@ -6,54 +6,45 @@
 <div class="max-w-5xl mx-auto">
 
     <header class="text-center mb-10">
-        <h1 class="text-3xl font-semibold text-slate-100">Dataset Labeling Platform</h1>
-        <p class="text-slate-400 mt-2">Upload, label, browse and export image datasets for AI training.</p>
+        <h1 class="text-3xl font-semibold">Dataset Labeling Platform</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-2">
+            Annotate, browse and export image datasets for AI training.
+        </p>
     </header>
 
-    {# Three modern stat cards. Each links to the most relevant workflow. #}
+    {# Headline counts: total across the whole tool, then one card per project. #}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <p class="text-xs uppercase tracking-wider text-slate-400">Total Images</p>
-            <p class="text-3xl font-semibold text-slate-100 mt-1">{{ total_count }}</p>
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+            <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Total annotated images</p>
+            <p class="text-3xl font-semibold mt-1">{{ total_count }}</p>
         </div>
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <p class="text-xs uppercase tracking-wider text-slate-400">Labeled</p>
-            <p class="text-3xl font-semibold text-emerald-400 mt-1">{{ labeled_count }}</p>
-        </div>
-        <div class="bg-slate-800 border border-slate-700 rounded-xl p-5">
-            <p class="text-xs uppercase tracking-wider text-slate-400">Unlabeled</p>
-            <p class="text-3xl font-semibold text-amber-400 mt-1">{{ unlabeled_count }}</p>
-        </div>
+        {% for project_id in per_project | list %}
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+                <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    {% if project_id == 'Fundus' %}Fundus images{% else %}WasteSorting images{% endif %}
+                </p>
+                <p class="text-3xl font-semibold text-blue-600 dark:text-blue-400 mt-1">{{ per_project[project_id] }}</p>
+            </div>
+        {% endfor %}
     </div>
 
-    {# Primary actions. Continue Labeling is highlighted when work remains. #}
+    {# Primary actions. The annotation page is the main workflow now. #}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <a href="{{ url_for('upload.upload_page') }}"
-           class="block bg-emerald-600 hover:bg-emerald-500 text-white text-center rounded-xl px-6 py-5 font-medium shadow-lg shadow-emerald-900/30 transition-colors">
-            <div class="text-lg">Upload Image</div>
-            <div class="text-xs text-emerald-100/90 mt-1">Add new images to a project</div>
+        <a href="{{ url_for('annotation.annotation_page') }}"
+           class="block bg-blue-600 hover:bg-blue-500 text-white text-center rounded-xl px-6 py-5 font-medium shadow-lg shadow-blue-900/30 transition-colors">
+            <div class="text-lg">New annotation</div>
+            <div class="text-xs text-blue-100/90 mt-1">Upload + label in one step</div>
         </a>
-        <a href="{{ url_for('label.dataset_browser') }}"
-           class="block bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700/60 text-center rounded-xl px-6 py-5 font-medium transition-colors">
-            <div class="text-lg text-slate-100">View Dataset</div>
-            <div class="text-xs text-slate-400 mt-1">Browse, filter, delete</div>
+        <a href="{{ url_for('annotation.dataset_browser') }}"
+           class="block bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-center rounded-xl px-6 py-5 font-medium transition-colors">
+            <div class="text-lg">View dataset</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Browse, search, delete</div>
         </a>
         <a href="{{ url_for('export.export_page') }}"
-           class="block bg-slate-800 border border-slate-700 hover:border-emerald-500 hover:bg-slate-700/60 text-center rounded-xl px-6 py-5 font-medium transition-colors">
-            <div class="text-lg text-slate-100">Export Data</div>
-            <div class="text-xs text-slate-400 mt-1">CSV / JSON / HTML</div>
+           class="block bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-center rounded-xl px-6 py-5 font-medium transition-colors">
+            <div class="text-lg">Export data</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">CSV / JSON / HTML with GLCM</div>
         </a>
     </div>
-
-    {% if unlabeled_count > 0 %}
-        <div class="mt-8 text-center">
-            <a href="{{ url_for('label.label_page') }}"
-               class="inline-flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium text-white transition-colors">
-                Continue Labeling
-                <span class="text-emerald-100/80">({{ unlabeled_count }} left)</span>
-            </a>
-        </div>
-    {% endif %}
-
 </div>
 {% endblock %}

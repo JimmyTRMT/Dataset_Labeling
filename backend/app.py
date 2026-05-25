@@ -15,16 +15,15 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from backend.config import Config, DISPLAY_TIMEZONE
 from backend.models.database import db, ImageRecord
+from backend.routes.annotation import annotation_bp
 from backend.routes.export import export_bp
-from backend.routes.label import label_bp
-from backend.routes.upload import upload_bp
 
 
 csrf = CSRFProtect()
 
 
 # Renders a naive UTC datetime (the way SQLAlchemy returns DB columns) as
-# a string in Thai local time. Templates call it via `{{ dt | local_time }}`.
+# a string in Thai local time. Templates use it via `{{ dt | local_time }}`.
 def local_time(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
     if value is None:
         return ""
@@ -64,8 +63,7 @@ def create_app() -> Flask:
                 "Set a strong SecretKey in your .env before running in production."
             )
 
-    flask_app.register_blueprint(upload_bp)
-    flask_app.register_blueprint(label_bp)
+    flask_app.register_blueprint(annotation_bp)
     flask_app.register_blueprint(export_bp)
 
     flask_app.jinja_env.filters["local_time"] = local_time
@@ -76,26 +74,26 @@ def create_app() -> Flask:
     return flask_app
 
 
-# The home page is small enough to live in the factory rather than its
-# own blueprint. It just shows three counts and the navigation buttons.
+# The home page is small enough to live in the factory. It just shows the
+# headline counts and links to the rest of the app.
 def register_core_routes(flask_app: Flask) -> None:
     @flask_app.get("/")
     def home():
         total_count = ImageRecord.query.count()
-        labeled_count = ImageRecord.query.filter_by(status="labeled").count()
+        per_project = {
+            project_id: ImageRecord.query.filter_by(project=project_id).count()
+            for project_id in flask_app.config["PROJECT_IDS"]
+        }
         return render_template(
             "index.html",
             total_count=total_count,
-            labeled_count=labeled_count,
-            unlabeled_count=total_count - labeled_count,
+            per_project=per_project,
         )
 
 
-# Adds new SQLite columns to legacy databases on startup. New deployments
-# are no-ops (db.create_all already created the table with all columns).
-# Wrapped in try/except so a partially upgraded DB does not block the app:
-# the failure is logged, and routes will surface clear errors when they
-# touch the missing column.
+# Adds new columns and migrates renamed values on legacy SQLite databases.
+# New deployments are no-ops. Wrapped in try/except so a partially upgraded
+# DB does not block the app; failures are logged for manual inspection.
 def ensure_schema_compatibility() -> None:
     if db.engine.dialect.name != "sqlite":
         return
@@ -105,19 +103,38 @@ def ensure_schema_compatibility() -> None:
             return
         existing_columns = {column["name"] for column in inspector.get_columns("images")}
         if "project" not in existing_columns:
-            # Default existing rows to DR; reviewers can re-label or wipe
-            # the DB if they want a clean slate.
             db.session.execute(
-                text("ALTER TABLE images ADD COLUMN project VARCHAR(50) NOT NULL DEFAULT 'DR'")
+                text("ALTER TABLE images ADD COLUMN project VARCHAR(50) NOT NULL DEFAULT 'Fundus'")
             )
             db.session.commit()
+
+        # Project rename pass: the project identifiers used to be DR and
+        # SmartBin. Migrate legacy rows in-place so existing test data
+        # keeps working under the new names.
+        db.session.execute(text("UPDATE images SET project='Fundus' WHERE project='DR'"))
+        db.session.execute(
+            text("UPDATE images SET project='WasteSorting' WHERE project='SmartBin'")
+        )
+        # Label rename pass: lowercase "severity X" → "Severity X" so old
+        # rows match the new Fundus label list.
+        for old, new in (
+            ("severity 0", "Severity 0"),
+            ("severity 1", "Severity 1"),
+            ("severity 2", "Severity 2"),
+            ("severity 3", "Severity 3"),
+            ("severity 4", "Severity 4"),
+        ):
+            db.session.execute(
+                text("UPDATE images SET label=:new WHERE label=:old"),
+                {"old": old, "new": new},
+            )
+        db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
         logging.exception("Schema migration failed; check the database manually")
 
 
-# Handles 404, 413 (upload too large), and 500 with branded pages and a
-# helpful flash message for the size limit.
+# Branded 404 / 413 / 500 pages.
 def register_error_handlers(flask_app: Flask) -> None:
     @flask_app.errorhandler(404)
     def not_found(_error):
@@ -127,10 +144,10 @@ def register_error_handlers(flask_app: Flask) -> None:
     def payload_too_large(_error):
         flash(
             "Upload too large. Each request is limited to 16 MB. "
-            "Please upload smaller batches or compress the images.",
+            "Please upload a smaller image.",
             "warning",
         )
-        return redirect(url_for("upload.upload_page"))
+        return redirect(url_for("annotation.annotation_page"))
 
     @flask_app.errorhandler(500)
     def server_error(_error):

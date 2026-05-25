@@ -3,41 +3,49 @@ from datetime import timedelta, timezone
 from pathlib import Path
 
 
-# UI runs in Thailand, so timestamps shown to users are converted to Thai
-# local time (UTC+7). Thailand has no DST, so a fixed offset is exact
+# UI runs in Thailand, so user-facing timestamps are converted to Thai
+# local time (UTC+7). Thailand has no DST, so a fixed offset stays exact
 # year-round and avoids depending on the OS tzdata. DB columns stay UTC.
 DISPLAY_TIMEZONE = timezone(timedelta(hours=7), name="ICT")
 
 
-# Two research projects share this tool. Identifiers are used in URLs,
-# DB rows, and export filenames, so they must stay stable.
-PROJECT_DR = "DR"
-PROJECT_SMARTBIN = "SmartBin"
-PROJECT_IDS: tuple[str, ...] = (PROJECT_DR, PROJECT_SMARTBIN)
+# Two research projects share this tool. Identifiers travel through URLs,
+# DB rows, export filenames, and stored-file prefixes, so they must stay
+# stable once chosen.
+PROJECT_FUNDUS = "Fundus"
+PROJECT_WASTE = "WasteSorting"
+PROJECT_IDS: tuple[str, ...] = (PROJECT_FUNDUS, PROJECT_WASTE)
 
-# Label sets are fixed by the spec, not env-driven, so reviewers see exactly
-# what the brief asked for.
+# Label sets are fixed by the spec, not env-driven, so the form choices
+# always match what the researchers asked for.
 PROJECT_LABELS: dict[str, list[str]] = {
-    PROJECT_DR: [
-        "severity 0",
-        "severity 1",
-        "severity 2",
-        "severity 3",
-        "severity 4",
-        "severity 5",
+    PROJECT_FUNDUS: [
+        "Severity 0",
+        "Severity 1",
+        "Severity 2",
+        "Severity 3",
+        "Severity 4",
     ],
-    PROJECT_SMARTBIN: ["Can", "Plastic", "Glass", "Cardboard"],
+    PROJECT_WASTE: ["PET", "Can", "Plastic"],
+}
+
+# Each project owns a short filename prefix used when we rename uploads
+# (e.g. Fundus_001.jpg, Waste_042.jpg). The counter that fills the digits
+# is project-wide so files of the same project share one numbering line.
+PROJECT_FILENAME_PREFIX: dict[str, str] = {
+    PROJECT_FUNDUS: "Fundus",
+    PROJECT_WASTE: "Waste",
 }
 
 
-# _as_bool turns env strings ("true", "1", "yes", "on") into booleans.
+# Casts env strings ("true", "1", "yes", "on") to a boolean.
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-# _anchor_sqlite_url forces relative SQLite URLs to live under the project root.
+# Forces relative SQLite URLs to live under the project root.
 def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     # Flask-SQLAlchemy resolves relative SQLite paths against app.instance_path,
     # not the project root. Pin them to the project root for predictable behavior.
@@ -51,7 +59,7 @@ def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     return f"sqlite:///{absolute_path}"
 
 
-# _anchor_folder normalises a folder path to be absolute, anchored at the project root.
+# Normalises a folder path to be absolute, anchored at the project root.
 def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> str:
     # Werkzeug's send_file rejects relative paths, so normalise to absolute.
     chosen = raw_value or default
@@ -61,7 +69,7 @@ def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> s
     return str(path)
 
 
-# Config gathers every runtime setting in one place. Read once, applied app-wide.
+# Gathers every runtime setting in one place. Read once, applied app-wide.
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DEFAULT_SECRET_KEY = "dev-change-me-secret"
@@ -88,10 +96,11 @@ class Config:
         PROJECT_ROOT,
     )
 
-    # Project metadata is static (per spec) and exposed in the Flask config so
-    # routes can read it via current_app.config without re-importing constants.
+    # Project metadata is static (per spec) and exposed on the Flask config
+    # so routes can read it via current_app.config without re-importing.
     PROJECT_IDS = PROJECT_IDS
     PROJECT_LABELS = PROJECT_LABELS
+    PROJECT_FILENAME_PREFIX = PROJECT_FILENAME_PREFIX
 
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 

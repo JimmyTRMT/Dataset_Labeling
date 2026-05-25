@@ -56,7 +56,7 @@ def _resolve_project() -> str | None:
 def _labeled_images_or_redirect():
     project = _resolve_project()
     if project is None:
-        flash("Invalid project. Choose DR or SmartBin.", "warning")
+        flash("Invalid project. Choose Fundus or WasteSorting.", "warning")
         return None, redirect(url_for("export.export_page"))
 
     labeled_images = (

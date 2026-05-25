@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% set active_page = 'annotation' %}
+{% block title %}Annotation - Dataset Labeling Platform{% endblock %}
+
+{% block content %}
+
+{# Step 1 of the workflow: nothing pending - show the upload form. #}
+{% if mode == 'upload' %}
+
+<div class="max-w-3xl mx-auto">
+
+    <header class="mb-6">
+        <h1 class="text-2xl font-semibold">New annotation - Step 1 / 2 (upload)</h1>
+        <p class="text-slate-600 dark:text-slate-400 text-sm mt-1">
+            Pick a dataset, drop one image, fill author and description. The label is chosen on the next step.
+        </p>
+    </header>
+
+    <form method="POST" action="{{ url_for('annotation.submit_upload') }}"
+          enctype="multipart/form-data" id="annotation-upload-form"
+          class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {# Dataset choice (required) #}
+        <section>
+            <label class="block text-sm font-semibold mb-2">Dataset</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {% for project_id in project_ids %}
+                    <label class="cursor-pointer block p-4 rounded-lg border-2 transition-colors
+                                  border-slate-200 dark:border-slate-700 hover:border-blue-500
+                                  has-[:checked]:border-blue-500 has-[:checked]:bg-blue-500/10">
+                        <input type="radio" name="project" value="{{ project_id }}"
+                               class="sr-only project-radio" required>
+                        <div class="font-semibold">{{ project_id }}</div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            {% if project_id == 'Fundus' %}Diabetic retinopathy fundus photographs{% else %}Waste sorting photographs{% endif %}
+                        </p>
+                    </label>
+                {% endfor %}
+            </div>
+        </section>
+
+        {# One image file (required) #}
+        <section>
+            <label for="image" class="block text-sm font-semibold mb-2">Image file</label>
+            <div id="dropzone"
+                 class="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
+                        border-slate-300 dark:border-slate-600 hover:border-blue-500 hover:bg-blue-500/5">
+                <svg class="w-10 h-10 mx-auto text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p class="mt-2 text-sm font-medium">Drag and drop one image here</p>
+                <p id="selected-file-text" class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    or click to browse - no file selected
+                </p>
+                <p class="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                    PNG / JPG / JPEG / BMP / GIF / TIF / WEBP - one file only, max 16 MB.
+                </p>
+            </div>
+            <input id="image" name="image" type="file" class="hidden" accept="image/*" required>
+        </section>
+
+        {# Author (required) #}
+        <section>
+            <label for="author" class="block text-sm font-semibold mb-2">Author</label>
+            <input id="author" name="author" type="text" required
+                   class="w-full px-3 py-2 rounded-lg border bg-white dark:bg-slate-900
+                          border-slate-200 dark:border-slate-700 focus:border-blue-500
+                          focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                   placeholder="Your name">
+        </section>
+
+        {# Description (required) #}
+        <section>
+            <label for="description" class="block text-sm font-semibold mb-2">Description</label>
+            <textarea id="description" name="description" rows="3" required
+                      class="w-full px-3 py-2 rounded-lg border bg-white dark:bg-slate-900
+                             border-slate-200 dark:border-slate-700 focus:border-blue-500
+                             focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      placeholder="Notes about this image (context, capture conditions, ...)"></textarea>
+        </section>
+
+        <button type="submit"
+                class="w-full px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors">
+            Upload and continue to labeling
+        </button>
+    </form>
+
+</div>
+
+{# Step 2 of the workflow: a pending image is waiting - show it with the
+   interactive viewer and let the user pick a label. #}
+{% else %}
+
+<div class="grid grid-cols-1 lg:grid-cols-10 gap-6">
+
+    {# Left 70%: image viewer with zoom / pan / rotate / flip / reset. #}
+    <div class="lg:col-span-7 space-y-3">
+        <header>
+            <h1 class="text-2xl font-semibold">New annotation - Step 2 / 2 (label)</h1>
+            <p class="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Inspect the image, then pick a label on the right. Mouse wheel zooms, click-and-drag pans.
+            </p>
+        </header>
+
+        <div class="text-xs text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
+            <span>File: <strong class="font-mono">{{ current_image.stored_filename }}</strong></span>
+            <span>Project: <strong>{{ current_image.project }}</strong></span>
+            <span>Author: <strong>{{ current_image.contributor or '-' }}</strong></span>
+        </div>
+
+        <div id="image-viewer-frame"
+             class="relative bg-black border border-slate-700 rounded-xl overflow-hidden image-viewer-frame">
+            <img id="main-image"
+                 src="{{ url_for('annotation.serve_image', filename=current_image.stored_filename) }}"
+                 alt="{{ current_image.original_filename }}"
+                 title="{{ current_image.original_filename }}"
+                 class="image-canvas select-none">
+        </div>
+
+        {# Small toolbar: rotate / flip / reset, plus a zoom hint. #}
+        <div class="flex flex-wrap items-center justify-center gap-2 text-sm">
+            <button type="button" id="rotate-left"
+                    class="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                ↺ Rotate -90&deg;
+            </button>
+            <button type="button" id="rotate-right"
+                    class="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                ↻ Rotate +90&deg;
+            </button>
+            <button type="button" id="flip-horizontal"
+                    class="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                ↔ Flip H
+            </button>
+            <button type="button" id="flip-vertical"
+                    class="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                ↕ Flip V
+            </button>
+            <button type="button" id="reset-view"
+                    class="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                Reset
+            </button>
+        </div>
+
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+            Description: {{ current_image.notes or '-' }}
+        </p>
+    </div>
+
+    {# Right 30%: label cards + save & delete actions. #}
+    <div class="lg:col-span-3 space-y-4">
+        <form method="POST" action="{{ url_for('annotation.submit_label', image_id=current_image.id) }}" id="label-form"
+              class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 space-y-4 sticky top-20">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="label" id="selected-label-input" value="">
+
+            <div>
+                <p class="text-sm font-semibold mb-1">Select label</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    Click a card or press its number key.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2" id="label-options">
+                {% for lbl in available_labels %}
+                    <button type="button" class="label-card cursor-pointer block p-3 rounded-lg border-2 text-left transition-colors
+                                                  border-slate-200 dark:border-slate-700 hover:border-blue-500"
+                            data-label="{{ lbl }}">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium">{{ lbl }}</span>
+                            {% if loop.index <= 9 %}
+                                <kbd class="text-xs font-mono px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400">{{ loop.index }}</kbd>
+                            {% endif %}
+                        </div>
+                    </button>
+                {% endfor %}
+            </div>
+
+            <button type="submit" id="save-label-btn" disabled
+                    class="w-full px-5 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors">
+                Save label
+            </button>
+        </form>
+
+        <form method="POST" action="{{ url_for('annotation.delete_annotation', image_id=current_image.id) }}"
+              class="delete-image-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit"
+                    class="w-full px-4 py-2 rounded-lg border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 transition-colors">
+                Cancel and delete this upload
+            </button>
+        </form>
+    </div>
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/annotation.js') }}"></script>
+{% endblock %}
