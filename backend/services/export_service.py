@@ -2,6 +2,7 @@ import base64
 import csv
 import html
 import json
+import logging
 import mimetypes
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,9 @@ from skimage.feature import graycomatrix, graycoprops
 
 from backend.config import DISPLAY_TIMEZONE
 from backend.models.database import ImageRecord
+
+
+logger = logging.getLogger(__name__)
 
 
 # GLCM is computed at one pixel of distance and four directions (0, 45, 90,
@@ -57,14 +61,23 @@ def _zero_glcm_features() -> dict[str, float]:
 # Reads one image, converts it to grayscale, computes the GLCM at the four
 # reference angles, and returns a flat dict keyed by the 24 column names.
 # Any decoding or numpy error degrades to zero-filled features so the rest
-# of the export still completes.
+# of the export still completes - the path is logged so operators can
+# investigate without grepping disk.
 def extract_glcm_features(image_path: Path) -> dict[str, float]:
     if not image_path.exists():
+        logger.warning("GLCM skipped: file not found at %s", image_path)
         return _zero_glcm_features()
     try:
         bgr_image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-        if bgr_image is None:
-            return _zero_glcm_features()
+    except (cv2.error, OSError) as exc:
+        logger.warning("GLCM skipped: OpenCV could not read %s (%s)", image_path, exc)
+        return _zero_glcm_features()
+
+    if bgr_image is None:
+        logger.warning("GLCM skipped: OpenCV returned None for %s", image_path)
+        return _zero_glcm_features()
+
+    try:
         grayscale = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
         glcm_matrix = graycomatrix(
             grayscale,
@@ -84,13 +97,22 @@ def extract_glcm_features(image_path: Path) -> dict[str, float]:
                     float(angle_values[direction_index]), GLCM_DECIMALS
                 )
         return features
-    except Exception:
+    except (ValueError, cv2.error) as exc:
+        logger.warning("GLCM computation failed for %s (%s)", image_path, exc)
         return _zero_glcm_features()
 
 
 # Builds one row, in the canonical 26-column order, ready for the writer.
+# Wrapped so a single corrupt image cannot bring the whole export down:
+# unexpected failures degrade the row to zero-filled features and are
+# logged, matching the per-image robustness of extract_glcm_features.
 def _build_export_row(image: ImageRecord, upload_path: Path) -> dict:
-    features = extract_glcm_features(upload_path / image.stored_filename)
+    try:
+        features = extract_glcm_features(upload_path / image.stored_filename)
+    except Exception:
+        logger.exception("Unexpected GLCM failure for image id=%s", image.id)
+        features = _zero_glcm_features()
+
     row: dict = {"img_path": f"data/images/{image.stored_filename}"}
     row.update(features)
     row["label"] = image.label or ""

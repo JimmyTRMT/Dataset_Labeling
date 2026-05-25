@@ -8,6 +8,7 @@ from flask import (
     send_from_directory,
     url_for,
 )
+from flask_login import current_user, login_required
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.models.database import ImageRecord, db
@@ -19,6 +20,15 @@ from backend.services.image_service import (
 
 
 annotation_bp = Blueprint("annotation", __name__)
+
+
+# Every route below requires an authenticated user. Registering the
+# decorator at the blueprint level (via before_request) keeps the route
+# bodies clean and guarantees we never accidentally leave one public.
+@annotation_bp.before_request
+@login_required
+def _require_login():
+    pass
 
 
 # The annotation page has two states:
@@ -50,20 +60,20 @@ def annotation_page():
     )
 
 
-# Stage 1 - upload only. Validates project + image + author + description
-# (the label is picked at stage 2) and stages the file in _pending/.
+# Stage 1 - upload only. Validates project + image + description (the
+# label is picked at stage 2) and stages the file in _pending/. The
+# author field on the form is read-only client-side; we ignore whatever
+# the request sends and always use current_user.username server-side so
+# a tampered POST cannot impersonate someone else.
 @annotation_bp.post("/annotation/upload")
 def submit_upload():
     project = request.form.get("project", "").strip()
-    author = request.form.get("author", "").strip()
     description = request.form.get("description", "").strip()
     image_file = request.files.get("image")
+    author = current_user.username
 
     if project not in current_app.config["PROJECT_IDS"]:
         flash("Please choose a dataset (Fundus or WasteSorting).", "warning")
-        return redirect(url_for("annotation.annotation_page"))
-    if not author:
-        flash("Author is required.", "warning")
         return redirect(url_for("annotation.annotation_page"))
     if not description:
         flash("Description is required.", "warning")

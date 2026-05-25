@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Reset password - Dataset Labeling Platform{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto mt-12">
+    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-8">
+        <header class="mb-6 text-center">
+            <h1 class="text-2xl font-semibold">Reset password</h1>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Step 2 / 2 - answer your security question and choose a new password for <strong>{{ username }}</strong>.
+            </p>
+        </header>
+
+        <div class="mb-4 px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+            <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Your security question</p>
+            <p class="font-medium mt-1">{{ security_question }}</p>
+        </div>
+
+        <form method="POST" action="{{ url_for('auth.reset_password') }}" class="space-y-4" id="reset-form" novalidate>
+            {{ form.csrf_token }}
+
+            <div>
+                <label for="{{ form.security_answer.id }}" class="block text-sm font-semibold mb-1">Your answer</label>
+                {{ form.security_answer(class_="w-full px-3 py-2 rounded-lg border bg-white dark:bg-slate-900
+                                              border-slate-200 dark:border-slate-700 focus:border-blue-500
+                                              focus:outline-none focus:ring-2 focus:ring-blue-500/30",
+                                         placeholder="Case- and whitespace-insensitive",
+                                         required=true) }}
+                {% for error in form.security_answer.errors %}
+                    <p class="text-xs text-rose-600 dark:text-rose-300 mt-1">{{ error }}</p>
+                {% endfor %}
+            </div>
+
+            <div>
+                <label for="{{ form.new_password.id }}" class="block text-sm font-semibold mb-1">New password</label>
+                {{ form.new_password(class_="w-full px-3 py-2 rounded-lg border bg-white dark:bg-slate-900
+                                           border-slate-200 dark:border-slate-700 focus:border-blue-500
+                                           focus:outline-none focus:ring-2 focus:ring-blue-500/30",
+                                      placeholder="At least 8 characters",
+                                      autocomplete="new-password",
+                                      required=true,
+                                      minlength=8) }}
+                {% for error in form.new_password.errors %}
+                    <p class="text-xs text-rose-600 dark:text-rose-300 mt-1">{{ error }}</p>
+                {% endfor %}
+            </div>
+
+            <div>
+                <label for="{{ form.new_password_confirm.id }}" class="block text-sm font-semibold mb-1">Confirm new password</label>
+                {{ form.new_password_confirm(class_="w-full px-3 py-2 rounded-lg border bg-white dark:bg-slate-900
+                                                   border-slate-200 dark:border-slate-700 focus:border-blue-500
+                                                   focus:outline-none focus:ring-2 focus:ring-blue-500/30",
+                                              placeholder="Repeat the new password",
+                                              autocomplete="new-password",
+                                              required=true,
+                                              minlength=8) }}
+                {% for error in form.new_password_confirm.errors %}
+                    <p class="text-xs text-rose-600 dark:text-rose-300 mt-1">{{ error }}</p>
+                {% endfor %}
+                <p id="password-match-hint" class="text-xs text-slate-400 mt-1 hidden"></p>
+            </div>
+
+            {{ form.submit(class_="w-full px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors") }}
+        </form>
+
+        <p class="text-center text-sm mt-6">
+            <a href="{{ url_for('auth.login') }}" class="text-slate-500 dark:text-slate-400 hover:underline">Back to sign in</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+{% endblock %}

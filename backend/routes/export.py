@@ -8,6 +8,7 @@ from flask import (
     send_file,
     url_for,
 )
+from flask_login import login_required
 
 from backend.models.database import ImageRecord
 from backend.services.export_service import (
@@ -18,6 +19,15 @@ from backend.services.export_service import (
 
 
 export_bp = Blueprint("export", __name__)
+
+
+# Same pattern as the annotation blueprint: gate every route behind
+# @login_required at the blueprint level so we cannot accidentally leave
+# an export endpoint public.
+@export_bp.before_request
+@login_required
+def _require_login():
+    pass
 
 
 # Renders the export page with one card per project. Each card displays

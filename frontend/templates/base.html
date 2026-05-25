@@ -37,29 +37,36 @@
             </a>
 
             <div class="flex items-center gap-3">
-                <div class="flex items-center gap-1 text-sm">
+                {# Main nav is only meaningful for authenticated users.
+                   The Admin link is appended only when the current user
+                   is an admin, so non-admins never see it. #}
+                {% if current_user.is_authenticated %}
                     {% set nav_links = [
                         ('home',       url_for('home'),                          'Home'),
                         ('annotation', url_for('annotation.annotation_page'),    'Annotation'),
                         ('dataset',    url_for('annotation.dataset_browser'),    'Dataset'),
                         ('export',     url_for('export.export_page'),            'Export'),
                     ] %}
-                    {% for page_id, href, caption in nav_links %}
-                        <a href="{{ href }}"
-                           class="px-3 py-1.5 rounded-md transition-colors
-                                  {% if active_page == page_id %}
-                                      bg-blue-600 text-white
-                                  {% else %}
-                                      text-slate-600 hover:bg-slate-200 hover:text-slate-900
-                                      dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
-                                  {% endif %}">
-                            {{ caption }}
-                        </a>
-                    {% endfor %}
-                </div>
+                    {% if current_user.is_admin %}
+                        {% set nav_links = nav_links + [('admin', url_for('admin.users_list'), 'Admin')] %}
+                    {% endif %}
+                    <div class="flex items-center gap-1 text-sm">
+                        {% for page_id, href, caption in nav_links %}
+                            <a href="{{ href }}"
+                               class="px-3 py-1.5 rounded-md transition-colors
+                                      {% if active_page == page_id %}
+                                          bg-blue-600 text-white
+                                      {% else %}
+                                          text-slate-600 hover:bg-slate-200 hover:text-slate-900
+                                          dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                                      {% endif %}">
+                                {{ caption }}
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% endif %}
 
-                {# Theme toggle. The icon swap is handled in theme.js so we
-                   can show either sun or moon without touching markup. #}
+                {# Theme toggle: visible whether or not a user is logged in. #}
                 <button id="theme-toggle" type="button"
                         class="ml-1 p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                         aria-label="Toggle theme">
@@ -71,6 +78,31 @@
                         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                     </svg>
                 </button>
+
+                {# Identity block: username + logout when signed in, link
+                   to /login when anonymous. POST-only logout so a stray
+                   GET cannot kick the user out. #}
+                {% if current_user.is_authenticated %}
+                    <div class="flex items-center gap-2 ml-1 pl-3 border-l border-slate-200 dark:border-slate-700">
+                        <span class="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">
+                            {{ current_user.username }}{% if current_user.is_admin %}
+                                <span class="px-1.5 py-0.5 ml-1 rounded text-[10px] uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-300">admin</span>
+                            {% endif %}
+                        </span>
+                        <form method="POST" action="{{ url_for('auth.logout') }}" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                                    class="px-3 py-1.5 text-sm rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}"
+                       class="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                        Sign in
+                    </a>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -87,20 +119,11 @@
                             {% else %}bg-slate-700/95 border-slate-600 text-slate-100{% endif %}"
                      data-toast>
                     <span class="flex-1 text-sm">{{ message }}</span>
-                    <button type="button" class="opacity-70 hover:opacity-100 font-bold text-lg leading-none"
-                            onclick="this.closest('[data-toast]').remove()">&times;</button>
+                    <button type="button" data-toast-close
+                            class="opacity-70 hover:opacity-100 font-bold text-lg leading-none">&times;</button>
                 </div>
             {% endfor %}
         </div>
-        <script>
-            setTimeout(function () {
-                document.querySelectorAll('[data-toast]').forEach(function (el) {
-                    el.style.transition = 'opacity 300ms';
-                    el.style.opacity = '0';
-                    setTimeout(function () { el.remove(); }, 300);
-                });
-            }, 3000);
-        </script>
     {% endif %}
 {% endwith %}
 
@@ -109,6 +132,7 @@
 </main>
 
 <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/toasts.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

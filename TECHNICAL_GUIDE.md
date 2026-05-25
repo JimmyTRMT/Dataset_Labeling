@@ -1,8 +1,14 @@
 # Technical Guide
 
-A practical handbook for the **Dataset Labeling Tool** — a small web application that helps a research team upload images, label them, and export everything as CSV, JSON, or a visual HTML file with pre-computed texture features.
+A practical handbook for the **Dataset Labeling Platform** &mdash; a Flask
+web application that lets a research team annotate images and export
+them with pre-computed GLCM texture features, ready for any
+machine-learning pipeline.
 
-This guide is meant for the people who will *use* the tool: researchers, supervisors, and technical reviewers. It avoids developer jargon where it can. Where a technical term is unavoidable (CSV, GLCM, Flask…), a short plain-language explanation comes with it.
+This guide is the **single source of truth** for anyone taking over the
+project: it covers the architecture, the security model, every workflow,
+the GLCM internals, the admin / user management, the bootstrap seed
+script, day-to-day maintenance and common troubleshooting.
 
 ---
 
@@ -10,9 +16,18 @@ This guide is meant for the people who will *use* the tool: researchers, supervi
 
 1. [Introduction](#1-introduction)
 2. [Quick installation](#2-quick-installation)
-3. [How the GLCM texture features work](#3-how-the-glcm-texture-features-work)
-4. [Maintenance](#4-maintenance)
-5. [Appendix — file map](#5-appendix--file-map)
+3. [Architecture overview](#3-architecture-overview)
+4. [Authentication and access control](#4-authentication-and-access-control)
+5. [The seed admin script (`create_admin.py`)](#5-the-seed-admin-script-create_adminpy)
+6. [Annotation workflow (two steps)](#6-annotation-workflow-two-steps)
+7. [Dataset browser](#7-dataset-browser)
+8. [Exports and GLCM texture features](#8-exports-and-glcm-texture-features)
+9. [Theme system (Light / Dark)](#9-theme-system-light--dark)
+10. [Maintenance](#10-maintenance)
+11. [Smoke testing](#11-smoke-testing)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Extending the application](#13-extending-the-application)
+14. [Appendix &mdash; file map](#14-appendix--file-map)
 
 ---
 
@@ -22,56 +37,57 @@ This guide is meant for the people who will *use* the tool: researchers, supervi
 
 The application gives a research team **one place** to:
 
-- **Upload** images for two parallel research projects:
-  - **DR** — diabetic retinopathy fundus photographs (6 severity grades)
-  - **SmartBin** — waste sorting photographs (4 material classes)
-- **Label** each image by clicking a button or pressing a number key (`1`–`9`).
-- **Browse** the dataset with filters, see who uploaded what, when, and what label it received.
-- **Export** the labeled subset of either project, in three formats:
-  - **CSV** — 26 columns, semicolon-separated, opens directly in Excel (FR / IT / ES locales) and pandas.
-  - **JSON** — same 26 keys, flat structure, ready for any ML library.
-  - **HTML** — a single self-contained file showing each image next to its label.
-  - The CSV and JSON exports embed **GLCM texture features** for every image as 24 separate columns (see section 3).
+- **Sign in** with a username + password (Flask-Login, PBKDF2-SHA256
+  hashed credentials, security-question password recovery).
+- **Annotate** images for two parallel research projects in two steps:
+  - **Fundus** &mdash; diabetic retinopathy fundus photographs (5
+    severity grades).
+  - **WasteSorting** &mdash; waste sorting photographs (3 material
+    classes).
+- **Browse** the dataset, search by filename, paginate, delete.
+- **Export** the labeled subset of each project as CSV, JSON or HTML,
+  with **GLCM texture features automatically computed** at export time.
+- **Manage users** (admin role only): promote, demote, delete accounts.
 
 ### Who it is for
 
 - Researchers labeling data for AI training.
-- Supervisors who need to see what was annotated and by whom.
+- Supervisors who need to see what was annotated, by whom, when.
 - Reviewers and jury members who want to inspect the pipeline.
+- Maintainers and contributors who need to keep the project running.
 
-### What you need to know to use it
+### What is **not** included
 
-- A web browser.
-- Where the team's `.env` secret key is (or how to generate one — see section 2).
-- Your name, if you want it recorded as the contributor.
-
-### What is *not* included
-
-- **No login system.** Anyone with network access to the running app can use it.
-- **No automatic backup.** Manual backup of `database/dataset.db` and `data/images/` is the team's responsibility (see section 4).
-- **No edit-after-the-fact for labels.** Once an image is labeled it stays labeled until deleted or re-uploaded.
+- **No mailing / SMS** &mdash; password recovery is autonomous via a
+  security question chosen at registration.
+- **No automatic off-site backup** &mdash; manual backup of
+  `database/dataset.db` and `data/images/` is the team's responsibility
+  (see [Section 10](#10-maintenance)).
+- **No multi-language UI** &mdash; the UI ships in English. Labels and
+  free-form fields handle any UTF-8 content (incl. Thai, French
+  accents).
 
 ---
 
 ## 2. Quick installation
 
-### Requirements
+### Prerequisites
 
-- **Python 3.10 or newer**
-- **pip** (comes with Python)
-- A terminal (PowerShell on Windows, Terminal on macOS/Linux)
+- **Python 3.10** or newer
+- **pip** (bundled with Python)
+- A terminal (PowerShell on Windows, Terminal on macOS / Linux)
+- *Optional:* `git`
 
 ### Step-by-step
 
-#### 1. Clone or copy the project folder
+#### 1. Get the project
 
 ```
-cd "path/to/your/working/directory"
-git clone <your-repo-url>      # or just copy the folder over
+git clone <repository-url>
 cd ModifV1_0_1_Correction
 ```
 
-#### 2. Create a virtual environment (recommended, keeps dependencies isolated)
+#### 2. Create a virtual environment
 
 Windows (PowerShell):
 
@@ -80,102 +96,521 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-macOS / Linux:
+Linux / macOS:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-#### 3. Install the dependencies
+#### 3. Install dependencies
 
 ```
 pip install -r requirements.txt
 ```
 
-This pulls in 10 packages:
+The project depends on **11 packages**:
 
-- **Flask, Flask-SQLAlchemy, Flask-WTF, SQLAlchemy, Werkzeug** — the web framework and database layer.
-- **python-dotenv** — reads the `.env` file.
-- **gunicorn** (Linux) and **waitress** (Windows) — production-grade ways to serve the app.
-- **scikit-image, opencv-python** — used to compute the GLCM texture features at export time.
+- **Flask, Flask-SQLAlchemy, Flask-WTF, Flask-Login, SQLAlchemy,
+  Werkzeug** &mdash; the web framework, ORM, CSRF, sessions, password
+  hashing.
+- **python-dotenv** &mdash; loads `.env` at startup.
+- **gunicorn** &mdash; production WSGI server on Linux.
+- **waitress** &mdash; production WSGI server on Windows (used by
+  `run_server.py`).
+- **scikit-image, opencv-python** &mdash; GLCM texture features
+  computed at export time.
 
-#### 4. Create your local `.env`
+#### 4. Create `.env`
 
 ```
 cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Paste the output of the `python -c` command into the `SECRET_KEY=` line in `.env`. The application **refuses to start** in production mode if `SECRET_KEY` is left at the default value — this prevents accidentally deploying with a publicly-known signing key.
+Paste the generated string as `SECRET_KEY=` in `.env`. The app
+**refuses to start** in production mode if `SECRET_KEY` is left at its
+default value &mdash; this prevents accidentally deploying with a
+publicly-known signing key.
 
-For local development, you can set `FLASK_DEBUG=true` instead of supplying a real key.
+For local development you can either set a real key or set
+`FLASK_DEBUG=true` to bypass the guard.
 
-#### 5. Run the application
+#### 5. Seed the bootstrap admin (recommended)
 
-For local development:
+```
+.\.venv\Scripts\python create_admin.py     (Windows)
+.venv/bin/python create_admin.py           (Linux / macOS)
+```
+
+See [Section 5](#5-the-seed-admin-script-create_adminpy) for what the
+script does and how to customise it.
+
+If you skip this step, the **first** user to register at `/register`
+becomes admin automatically.
+
+#### 6. Start the app
+
+For development (auto-reload, listens on 127.0.0.1:5000):
 
 ```
 python -m backend
 ```
 
-For a LAN production deployment on Windows (recommended — exposes the app on every interface, port 8080, with an auto-detected LAN URL printed in the terminal):
+For LAN production (binds 0.0.0.0:8080 via waitress, prints the LAN
+URL):
 
 ```
 python run_server.py
 ```
 
-The script forces `FLASK_DEBUG=false`, starts waitress, and prints both the loopback URL and the LAN URL so colleagues on the same Wi-Fi can connect immediately.
-
-For Linux behind nginx / Caddy:
+For Linux production (behind nginx / Caddy):
 
 ```
 gunicorn "backend.app:app" -b 0.0.0.0:8000 -w 4
 ```
 
-Open http://127.0.0.1:5000 (dev) or http://127.0.0.1:8080 (run_server.py) in a browser.
+---
 
-### What you should see
+## 3. Architecture overview
 
-A home page titled **Dataset Labeling Tool** with three buttons (Upload, View Dataset, Export) and a summary of how many images you have. From there:
+### Layered diagram
 
-- *Upload* → choose **DR** or **SmartBin**, pick one or several files, click *Upload*.
-- *Label* → click a label or press its number key. The tool jumps to the next image automatically.
-- *Dataset* → table view, filter by project or by labeling status.
-- *Export* → one card per project, each with CSV / JSON / HTML download buttons.
+```
++--------------------+        HTTP         +-----------------------+
+|     Browser        | <-----------------> |   Flask Application   |
+| (Tailwind CSS,     |                     |   (backend/app.py)    |
+|  custom viewer,    |                     +-----------+-----------+
+|  toasts, theme)    |                                 |
++--------------------+                                 |
+                                                       v
+  +----------------+   +------------------+   +-------------------+   +----------------+
+  |  auth_bp       |   |  annotation_bp   |   |     export_bp     |   |    admin_bp    |
+  |  (login,       |   |  (2-step         |   |  (CSV / JSON /    |   |  (user mgmt:   |
+  |   register,    |   |   upload+label,  |   |   HTML, GLCM      |   |   promote/     |
+  |   forgot,      |   |   dataset        |   |   computed here)  |   |   demote/      |
+  |   reset,       |   |   browser)       |   |                   |   |   delete)      |
+  |   logout)      |   |                  |   |                   |   |                |
+  +-------+--------+   +--------+---------+   +---------+---------+   +-------+--------+
+          |                     |                       |                     |
+          v                     v                       v                     v
+   +-------------+      +------------------+    +------------------+    +-------------+
+   | forms.py    |      | image_service.py |    | export_service   |    | auth_utils  |
+   | (WTForms)   |      | (validation,     |    | (GLCM, CSV,      |    | (decorators)|
+   +-------------+      |  rename,         |    |  JSON, HTML)     |    +-------------+
+                        |  folder routing) |    +---------+--------+
+                        +--------+---------+              |
+                                 |                        v
+                                 v               data/exports/
+                          data/images/<Label>/
+                                 |
+                                 v
+                          database/dataset.db
+                          (users + images)
+```
+
+### Folder layout
+
+```
+ModifV1_0_1_Correction/
+├── backend/
+│   ├── app.py                    Flask factory + error handlers + CLI commands
+│   ├── __main__.py               python -m backend (dev entry point)
+│   ├── config.py                 env-driven settings, project metadata, timezone
+│   ├── forms.py                  WTForms classes (Login / Register / Forgot / Reset)
+│   ├── auth_utils.py             @admin_required decorator
+│   ├── routes/
+│   │   ├── auth.py               Public auth routes (and POST /logout)
+│   │   ├── annotation.py         2-step annotation + image serving + dataset browser
+│   │   ├── export.py             /export and CSV / JSON / HTML downloads
+│   │   └── admin.py              /admin/users + promote / demote / delete
+│   ├── models/database.py        SQLAlchemy + User + ImageRecord
+│   └── services/
+│       ├── image_service.py      file validation, sequential naming, folder routing
+│       └── export_service.py     GLCM extraction + CSV / JSON / HTML builders
+│
+├── frontend/
+│   ├── templates/
+│   │   ├── base.html             Shared layout (Tailwind, navbar, toasts, theme toggle)
+│   │   ├── index.html            Home with stat cards
+│   │   ├── annotation.html       2-mode form (upload then label)
+│   │   ├── dashboard.html        Dataset browser (project tabs + search + pagination)
+│   │   ├── export.html           Export cards per project
+│   │   ├── auth/
+│   │   │   ├── login.html
+│   │   │   ├── register.html
+│   │   │   ├── forgot.html
+│   │   │   └── reset.html
+│   │   ├── admin/users.html      User management table
+│   │   └── errors/               403, 404, 500
+│   └── static/
+│       ├── css/app.css           Minimal custom CSS on top of Tailwind
+│       └── js/
+│           ├── theme.js          Light / Dark toggle (localStorage)
+│           ├── toasts.js         Auto-dismiss + close-button delegation
+│           ├── annotation.js     Dropzone + custom image viewer (zoom/pan/rotate)
+│           ├── dataset.js        Search + pagination + delete confirm
+│           ├── auth.js           Password-match live check + English validation
+│           └── admin.js          Delete-user confirm dialog
+│
+├── database/
+│   ├── schema.sql                Reference SQL (informational)
+│   └── dataset.db                Runtime DB (gitignored)
+│
+├── data/
+│   ├── images/                   Uploaded files grouped by <Label>/ subfolder
+│   └── exports/                  Generated CSV / JSON / HTML
+│
+├── docs/
+│   ├── architecture.md           High-level architecture (also references this guide)
+│   ├── setup.md                  Alternative install walk-through
+│   └── screenshots/              UI captures for the report
+│
+├── run_server.py                 LAN production launcher (waitress + auto-IP)
+├── create_admin.py               One-shot bootstrap-admin seed script
+├── requirements.txt              11 pinned dependencies
+├── README.md                     Quick start + features
+├── TECHNICAL_GUIDE.md            This file
+├── .env.example                  Template for local secrets
+└── .gitignore
+```
+
+### Request flow at a glance
+
+| Endpoint                                        | Method   | Guard               | Purpose                                                     |
+|-------------------------------------------------|----------|---------------------|-------------------------------------------------------------|
+| `/login`, `/register`, `/forgot`, `/reset`      | GET+POST | public              | Auth pages                                                  |
+| `/logout`                                       | POST     | `@login_required`   | POST-only, CSRF-protected logout                            |
+| `/`                                             | GET      | `@login_required`   | Home with per-project counts                                |
+| `/annotation`                                   | GET      | blueprint-wide      | Dual-mode: upload form OR labeling viewer if pending image  |
+| `/annotation/upload`                            | POST     | blueprint-wide      | Stage 1: save the file in `_pending/`                       |
+| `/annotation/<id>/label`                        | POST     | blueprint-wide      | Stage 2: move to `<Label>/`, mark labeled                   |
+| `/annotation/<id>/delete`                       | POST     | blueprint-wide      | Drop the image                                              |
+| `/images/<filename>`                            | GET      | blueprint-wide      | Serve a stored image (path-traversal safe)                  |
+| `/dataset`                                      | GET      | blueprint-wide      | Redirect to `/dataset/Fundus`                               |
+| `/dataset/<project_id>`                         | GET      | blueprint-wide      | Project-scoped browser with tabs                            |
+| `/export`                                       | GET      | blueprint-wide      | Per-project export cards                                    |
+| `/export/csv?project=<id>`                      | GET      | blueprint-wide      | 26-column CSV with `;` delimiter                            |
+| `/export/json?project=<id>`                     | GET      | blueprint-wide      | Same 26 keys, flat JSON                                     |
+| `/export/html?project=<id>`                     | GET      | blueprint-wide      | Self-contained HTML preview                                 |
+| `/admin/users`                                  | GET      | `@admin_required`   | List of users                                               |
+| `/admin/users/<id>/role`                        | POST     | `@admin_required`   | Promote / demote                                            |
+| `/admin/users/<id>/delete`                      | POST     | `@admin_required`   | Remove account                                              |
+
+> "Blueprint-wide" means the guard is applied via
+> `@blueprint.before_request @login_required` (or `@admin_required` for
+> `admin_bp`), so it can never be accidentally forgotten on a single
+> endpoint.
 
 ---
 
-## 3. How the GLCM texture features work
+## 4. Authentication and access control
 
-### What GLCM is, in plain language
+### Storage model
 
-When the application exports a dataset, it adds six numbers per image that describe the **texture** of the photograph — how rough, smooth, or repetitive the pixel patterns are. These numbers come from a classical computer-vision technique called the **GLCM** (Gray-Level Co-occurrence Matrix).
+| Column                 | Type           | Notes                                                                 |
+|------------------------|----------------|-----------------------------------------------------------------------|
+| `id`                   | INTEGER PK     | Auto-increment                                                        |
+| `username`             | VARCHAR(80)    | Unique, indexed, 3-80 chars, `[A-Za-z0-9_-]+`                         |
+| `password_hash`        | VARCHAR(255)   | PBKDF2-SHA256 (`werkzeug.security.generate_password_hash`)            |
+| `role`                 | VARCHAR(20)    | `"admin"` or `"annotator"`                                            |
+| `security_question`    | VARCHAR(255)   | Free-form, chosen by the user at registration                         |
+| `security_answer_hash` | VARCHAR(255)   | PBKDF2-SHA256 of the lowercased, stripped answer                      |
+| `created_at`           | DATETIME       | UTC                                                                   |
 
-**The simple analogy.** Imagine looking at a photo and counting how often a pixel of brightness `A` is right next to a pixel of brightness `B`. Do that systematically for every pair of brightness values, and you get a table — the co-occurrence matrix. From that table, you can compute summary numbers that say things like "the image has lots of strong contrast" or "neighbouring pixels look alike most of the time".
+### Forms (WTForms in `backend/forms.py`)
 
-### Why we include it
+| Form                  | Validators                                                                                              |
+|-----------------------|---------------------------------------------------------------------------------------------------------|
+| `LoginForm`           | username 3-80, password 8-128                                                                           |
+| `RegisterForm`        | username 3-80 + regex + unique, password 8-128 + confirm match, security_question 5-255, answer 1-255   |
+| `ForgotPasswordForm`  | username 3-80                                                                                           |
+| `ResetPasswordForm`   | security_answer 1-255, new_password 8-128 + confirm match                                               |
 
-For tasks like **diabetic retinopathy grading** and **waste sorting**, classical machine-learning models often work surprisingly well on these texture summaries — sometimes as well as deep learning, with far less data and compute. By writing the features directly into the export, we save the user from re-running an image-processing pipeline before training a model.
+### Password & security-answer hashing
 
-### What is computed
+- Both passwords AND security answers are hashed with PBKDF2-SHA256 via
+  `werkzeug.security.generate_password_hash(method="pbkdf2:sha256")`,
+  which uses **1,000,000** iterations by default.
+- Security answers are normalised (`.strip().lower()`) before hashing
+  so users can answer "Whiskers", "whiskers " and "WHISKERS" with the
+  same result.
 
-For every image, six properties are calculated, each in **four directions**:
+### Forgot-password recovery (autonomous, no email)
 
-| Property        | What it tells you (informally)                              |
-|-----------------|-------------------------------------------------------------|
-| `contrast`      | How much the brightness changes between neighbouring pixels |
-| `dissimilarity` | A linear-scale cousin of contrast (less sensitive to outliers) |
-| `homogeneity`   | How "smooth" or uniform the texture is                      |
-| `energy`        | How orderly the pixel pattern is                            |
-| `correlation`   | How predictable a pixel is from its neighbour               |
-| `asm`           | Angular Second Moment — the square of energy, traditionally reported alongside it |
+Two steps:
 
-The four directions correspond to checking neighbour pairs at angles **0°, 45°, 90°, 135°**, all at a distance of one pixel. Together they capture how the texture looks when scanned horizontally, vertically, and diagonally.
+1. **`POST /forgot`** &mdash; user submits their username. The server
+   stores the username in the session under
+   `RESET_SESSION_KEY = "reset_username"` and redirects to `/reset`.
+2. **`POST /reset`** &mdash; the server displays the user's
+   `security_question`. The user submits the answer + a new password.
+   If the answer matches, the password is updated and the user is
+   logged in. The session key is cleared.
 
-### How it appears in each export format
+If a username does not exist at step 1, the server still flashes the
+generic "if that account exists" message and silently redirects, so
+attackers cannot enumerate valid usernames through `/forgot`.
 
-The CSV and JSON share **one strict 26-column schema**, in this exact order:
+### Roles and protected routes
+
+| Role         | Can do                                                                  |
+|--------------|-------------------------------------------------------------------------|
+| `annotator`  | Annotate, browse the dataset, export                                    |
+| `admin`      | Everything an annotator can do, plus `/admin/users` (CRUD on accounts)  |
+
+`@admin_required` (defined in `backend/auth_utils.py`) chains
+`@login_required` then checks `current_user.is_admin`. Anonymous users
+get a 302 to `/login`; logged-in non-admins get a 403.
+
+### CLI commands
+
+These run via the **venv** Python, e.g.:
+
+```
+.\.venv\Scripts\flask --app backend.app list-users
+.\.venv\Scripts\flask --app backend.app promote-admin USERNAME
+```
+
+| Command              | What it does                                                                            |
+|----------------------|-----------------------------------------------------------------------------------------|
+| `list-users`         | Prints every user with their role and creation date                                     |
+| `promote-admin USR`  | Sets `USR.role = "admin"`. Does nothing if the user does not exist                      |
+
+> If the global `flask` command is on PATH but pointing at a different
+> Python (no Flask installed), call it through the venv directly as
+> shown above. The system Python error
+> `ModuleNotFoundError: No module named 'dotenv'` always means the wrong
+> interpreter is being used.
+
+### Admin self-protection
+
+The admin panel refuses to:
+
+- demote an admin who would leave the system with **zero admins**,
+- delete an admin who would leave the system with **zero admins**,
+- delete the **currently signed-in account** from the panel (this is
+  not an admin-level safety, it is a UX guard).
+
+---
+
+## 5. The seed admin script (`create_admin.py`)
+
+A short standalone script at the project root that **creates or forces
+a known admin account** into the database. It is not wired into the
+running app: no route imports it, the factory does not call it.
+Operators run it on purpose, typically once after a fresh install or
+when they need a guaranteed recovery account.
+
+### Behaviour
+
+- If the seed username does **not** exist &mdash; the script creates the
+  account with the seed password / question / answer and `role=admin`.
+- If the seed username **does** exist &mdash; the script **overwrites**
+  the password, security question, answer and forces the role back to
+  `admin`. This doubles as an emergency password reset for that
+  account.
+
+The script prints a summary on success:
+
+```
+Updated existing admin account 'USERNAME'.
+  Username : USERNAME
+  Password : PASSWORD
+  Role     : admin/annotator
+  Question : QUESTION TO RECOVER PASSWORD
+  Answer   : ANSWER TO QUESTION
+```
+
+### How to customise the seed credentials
+
+Open `create_admin.py` and edit the four constants near the top:
+
+```python
+SEED_USERNAME = "USERNAME"
+SEED_PASSWORD = "PASSWORD"
+SEED_QUESTION = "QUESTION"
+SEED_ANSWER = "ANSWER"
+```
+
+- `SEED_USERNAME` &mdash; 3-80 chars, `[A-Za-z0-9_-]+`. If a user
+  already exists with this name, they will be promoted to admin and
+  their credentials overwritten.
+- `SEED_PASSWORD` &mdash; at least 8 characters.
+- `SEED_QUESTION` &mdash; at least 5 characters; this is the question
+  the user will see at `/forgot`.
+- `SEED_ANSWER` &mdash; the answer is stored hashed; comparison is
+  case- and whitespace-insensitive (so "Dog", "DOG", "  dog " all
+  match).
+
+Save the file. There is nothing else to do; the script reads the
+constants on each run.
+
+### How to launch the script
+
+Always use the **virtual environment Python** so dotenv, SQLAlchemy and
+the rest of the stack resolve correctly:
+
+Windows:
+
+```
+.\.venv\Scripts\python create_admin.py
+```
+
+Linux / macOS:
+
+```
+.venv/bin/python create_admin.py
+```
+
+Do **not** call `python create_admin.py` from outside the venv: your
+system Python probably lacks the dependencies and you will get
+`ModuleNotFoundError: No module named 'dotenv'`.
+
+### When to run it
+
+- Right after a fresh install if you want to log in **immediately**
+  with a known account, before anyone uses `/register`.
+- After a DB wipe (you deleted `database/dataset.db`).
+- To **reset** the bootstrap admin's credentials if they were changed
+  and you forgot them. Re-running the script forces the constants back
+  into the row.
+
+### When NOT to run it
+
+- On every startup. The script is intentionally manual, not part of any
+  auto-bootstrap path, so it cannot silently overwrite a password a
+  user changed through the UI.
+
+### Safety to delete the script
+
+`create_admin.py` is **not imported** by `backend/app.py`,
+`run_server.py`, any blueprint or any template. Deleting the file does
+not affect the running app. Keep it as a recovery aid or remove it if
+you no longer need it.
+
+---
+
+## 6. Annotation workflow (two steps)
+
+Stored filenames follow `<Label>/<Prefix>_NNN.<ext>`, for example
+`Severity_0/Fundus_007.jpg` or `PET/Waste_042.jpg`. The counter is
+project-wide and never collides because of the per-project prefix.
+
+### Step 1 &mdash; upload only
+
+`GET /annotation` shows the upload form (project selector + dropzone +
+author + description). The **author** field is locked to
+`current_user.username` and the server ignores any client-side
+tampering with it.
+
+`POST /annotation/upload`:
+
+1. Validates `project ∈ PROJECT_IDS`.
+2. Validates the description and the file presence.
+3. Calls `persist_pending_image()`:
+   - `secure_filename` on the original name,
+   - extension check against the whitelist,
+   - sequential filename via `next_sequence_number(project)` &mdash;
+     scans existing rows for that project and returns `max + 1`,
+   - saves to `data/images/_pending/<Prefix>_NNN.<ext>`,
+   - returns a fresh `ImageRecord` with `status="unlabeled"`.
+4. Commits the row inside try/except + rollback. If the commit fails,
+   the file is removed from disk so we never leave an orphan.
+
+### Step 2 &mdash; labeling viewer
+
+`GET /annotation` (now there is an unlabeled image) renders the
+labeling viewer instead of the upload form. The image lives in a fixed
+640-px-tall frame with `bg-black`. `annotation.js` layers four CSS
+transforms on top:
+
+- **Zoom** &mdash; mouse wheel (clamped to 0.1x &ndash; 10x).
+- **Pan** &mdash; click-and-drag.
+- **Rotate** &mdash; small buttons under the image (&plusmn; 90 deg).
+- **Flip** &mdash; horizontal and vertical buttons.
+- **Reset** &mdash; restores the initial view.
+
+Keyboard:
+
+- `1` to `9` &mdash; select the matching label card.
+- `Enter` &mdash; submit when a label is selected.
+
+`POST /annotation/<id>/label`:
+
+1. Validates the label against `PROJECT_LABELS[image.project]`.
+2. Calls `finalize_with_label()`:
+   - `os.replace` the file from `_pending/` to `<Label>/`,
+   - updates `image.label`, `image.status = "labeled"`,
+   - rewrites `image.stored_filename` to the new relative path.
+3. Commits.
+
+---
+
+## 7. Dataset browser
+
+`/dataset` redirects to `/dataset/Fundus`. The page renders one tab per
+project; the active tab is highlighted in blue.
+
+`/dataset/<project_id>` queries only that project's labeled rows.
+
+### Columns
+
+| Column        | Source                                         |
+|---------------|------------------------------------------------|
+| Thumbnail     | `<img>` served by `GET /images/<stored>`       |
+| Filename      | `stored_filename` + `original_filename` below  |
+| Label         | Blue pill                                      |
+| Description   | `notes`, 3-line clamp with full text on hover  |
+| Author        | `contributor` (always equal to a `username`)   |
+| Upload date   | `uploaded_at` rendered via the `local_time` filter (Thai UTC+7) |
+| Actions       | Delete button (POST with CSRF + JS confirm)    |
+
+### Client-side controls (in `dataset.js`)
+
+- **Search** &mdash; filters rows by `data-filename` (case-insensitive
+  match across stored + original names).
+- **Page size** &mdash; 10 / 25 / 50 / 100 rows per page.
+- **Prev / Next** with a "Page X / Y" label.
+- **Delete confirm** &mdash; asks before submitting the delete form.
+
+All filtering and pagination happen in the browser; the server returns
+the entire labeled set for the active project.
+
+---
+
+## 8. Exports and GLCM texture features
+
+### GLCM in plain language
+
+When the application exports a dataset, it adds **24 numbers per image**
+that describe the texture of the photograph &mdash; how rough, smooth,
+or repetitive the pixel patterns are. These numbers come from a
+classical computer-vision technique called the **GLCM**
+(Gray-Level Co-occurrence Matrix).
+
+> **Simple analogy.** Imagine counting how often a pixel of brightness
+> `A` is right next to a pixel of brightness `B`. Do that systematically
+> for every pair, and you get a table &mdash; the co-occurrence matrix.
+> From that table you compute summary numbers like "the image has lots
+> of strong contrast" or "neighbouring pixels look alike most of the
+> time".
+
+### Six properties &times; four directions
+
+| Property         | Plain-English meaning                                              |
+|------------------|--------------------------------------------------------------------|
+| `contrast`       | How much brightness changes between neighbouring pixels            |
+| `dissimilarity`  | A linear-scale cousin of contrast, less sensitive to outliers      |
+| `homogeneity`    | How "smooth" or uniform the texture is                             |
+| `energy`         | How orderly the pixel pattern is                                   |
+| `correlation`    | How predictable a pixel is from its neighbour                      |
+| `asm`            | Angular Second Moment &mdash; the square of energy                 |
+
+Each property is computed at four directions (`0°, 45°, 90°, 135°`)
+and a distance of one pixel. That gives **24 values per image**.
+
+### The strict 26-column schema (CSV and JSON)
 
 ```
 img_path,
@@ -188,224 +623,292 @@ asm1,  asm2,  asm3,  asm4,        # ASM           at 0°, 45°, 90°, 135°
 label
 ```
 
-**CSV** — semicolon-separated, every metric in its own cell. UTF-8 with BOM so Excel reads accented or Thai characters correctly:
+### CSV
 
 ```
 img_path;con1;con2;con3;con4;dis1;...;asm4;label
-data/images/20260507030311_459b956f.jpg;0.0636;0.1307;0.0816;0.1265;0.063;...;0.0607;severity 0
+data/images/Severity_0/Fundus_001.jpg;0.0636;0.1307;0.0816;0.1265;0.0630;...;0.0607;Severity 0
 ```
 
-**JSON** — array of flat dicts using the same 26 keys, numbers as JSON numbers:
+- **Delimiter** &mdash; `;` (semicolon). Works directly in European
+  Excel (FR / IT / ES) without a "Text to columns" wizard, and pandas
+  reads it with `sep=";"`.
+- **Encoding** &mdash; UTF-8 with BOM (`utf-8-sig`), so Excel detects
+  the encoding correctly even on Windows locales.
+
+### JSON
 
 ```json
 [
-    {
-        "img_path": "data/images/20260507030311_459b956f.jpg",
-        "con1": 0.0636, "con2": 0.1307, "con3": 0.0816, "con4": 0.1265,
-        "dis1": 0.063,  "dis2": 0.1289, "dis3": 0.0802, "dis4": 0.1248,
-        "hom1": 0.9685, "hom2": 0.9357, "hom3": 0.96,   "hom4": 0.9378,
-        "ene1": 0.2621, "ene2": 0.2454, "ene3": 0.2577, "ene4": 0.2464,
-        "corr1": 0.9979, "corr2": 0.9957, "corr3": 0.9973, "corr4": 0.9959,
-        "asm1": 0.0687, "asm2": 0.0602, "asm3": 0.0664, "asm4": 0.0607,
-        "label": "severity 0"
-    }
+  {
+    "img_path": "data/images/Severity_0/Fundus_001.jpg",
+    "con1": 0.0636, "con2": 0.1307, "con3": 0.0816, "con4": 0.1265,
+    "...": "...",
+    "asm4": 0.0607,
+    "label": "Severity 0"
+  }
 ]
 ```
 
-**HTML** — the visual layout focuses on *image + label* (texture features are not shown).
+Same 26 keys, in the same order. Numbers are JSON numbers (not
+strings) so pandas / numpy / pytorch read them natively.
 
-### What happens when an image is missing or corrupt
+### Visual HTML export
 
-If a file referenced by the database is missing on disk, or the file fails to decode, the export does **not** crash. Instead the 24 feature columns of that row are all set to `0.0`, and the rest of the export continues. You can spot affected rows in two ways:
+A single self-contained `.html` file with one row per image: thumbnail
+left, label badge right. Images are embedded as `data:image/...;base64`
+URLs so no companion folder is needed. The file ships with its own
+inline styles (independent of Tailwind) so it works offline.
 
-- The 24 GLCM cells (`con1` … `asm4`) are all `0.0`.
-- The image cell in the HTML export shows "missing file".
+### Robustness in `export_service.py`
 
-### Where the code lives
-
-The implementation is in [`backend/services/export_service.py`](backend/services/export_service.py):
-
-- `extract_glcm_features(path)` — reads the image (OpenCV), converts it to grayscale, calls `skimage.feature.graycomatrix` and `graycoprops`, and returns a flat dict of 24 keys (`con1` … `asm4`).
-- `build_csv_export`, `build_json_export` — emit the 26-column schema. CSV uses `csv.writer(..., delimiter=";")`; JSON keeps the keys flat to mirror the CSV.
-- `build_html_export` — the visual gallery, independent of the GLCM pipeline.
+- `extract_glcm_features()` returns zero-filled features and **logs**
+  the path when:
+  - the file is missing,
+  - OpenCV cannot read it (`cv2.error` or `OSError`),
+  - OpenCV returns `None` (unknown format),
+  - `graycomatrix` / `graycoprops` raise (constant image, bad shape).
+- `_build_export_row()` wraps the GLCM call in a broad `try/except` so
+  even an unexpected failure on one image only zeros out **that** row
+  &mdash; the rest of the export still completes.
 
 ---
 
-## 4. Maintenance
+## 9. Theme system (Light / Dark)
 
-This section covers the routine tasks a maintainer will need to perform.
+### How it works
 
-### 4.1 Backing up the dataset
+- `<html>` carries a `dark` class when dark mode is active.
+- An inline `<script>` in `base.html` reads `localStorage["theme"]` and
+  applies the class **before paint**, so the page never flashes the
+  wrong colour on first load.
+- `tailwind.config = { darkMode: "class" }` &mdash; Tailwind picks up
+  `dark:` utility variants based on the class.
+- A toggle button in the navbar swaps the class and writes the new
+  value to `localStorage`. Logic lives in `frontend/static/js/theme.js`.
 
-The two pieces of state worth backing up are:
+### Adding new dark-aware styles
 
-| What                       | Where                       | Notes                                    |
-|----------------------------|-----------------------------|------------------------------------------|
-| The database               | `database/dataset.db`       | Single SQLite file; copy it while the app is stopped, or use `sqlite3 dataset.db ".backup backup.db"` for a hot copy. |
-| The image files            | `data/images/`              | Standard files; copy the whole directory. |
+Use Tailwind utility pairs:
 
-A weekly cron job that zips both into a timestamped archive is usually enough.
+```html
+<div class="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"> ... </div>
+```
 
-### 4.2 Resetting the application to a clean state
+The application's accent colour is `blue-600` (with `blue-500` hover
+and `blue-400` for dark-mode text).
 
-To wipe everything (DB rows + image files) and start fresh:
+---
+
+## 10. Maintenance
+
+### 10.1 Backing up the dataset
+
+| What                | Where                       | How                                                                   |
+|---------------------|-----------------------------|-----------------------------------------------------------------------|
+| The database        | `database/dataset.db`       | Stop the app and copy; or use `sqlite3 dataset.db ".backup b.db"`     |
+| The image files     | `data/images/`              | Copy the whole directory (it includes label sub-folders + `_pending/`)|
+| Exports             | `data/exports/`             | Optional; they can be regenerated                                     |
+
+A weekly cron job that zips both folders is usually enough.
+
+### 10.2 Resetting the application
+
+Stop the app first, then:
 
 ```
-# Stop the app first, then:
 rm database/dataset.db
-rm data/images/*       # keep .gitkeep
-rm data/exports/*      # keep .gitkeep
+rm -rf data/images/*
+rm -rf data/exports/*
 ```
 
-The next start will recreate an empty database from the model definition.
+(Leave the `.gitkeep` files if present.) On next startup, SQLAlchemy
+re-creates the schema. Run `create_admin.py` again to seed an admin
+account.
 
-### 4.3 Adding a new project
+### 10.3 Adding or editing labels for a project
 
-Open [`backend/config.py`](backend/config.py) and edit the two constants near the top:
+Open `backend/config.py` and edit the `PROJECT_LABELS` dict. Existing
+labels in the DB are untouched; new annotations use the updated list.
+
+To **add a third project**, also extend `PROJECT_IDS` and
+`PROJECT_FILENAME_PREFIX`:
 
 ```python
 PROJECT_TELEMED = "Telemed"
-PROJECT_IDS = (PROJECT_DR, PROJECT_SMARTBIN, PROJECT_TELEMED)
-
+PROJECT_IDS = (PROJECT_FUNDUS, PROJECT_WASTE, PROJECT_TELEMED)
 PROJECT_LABELS = {
-    PROJECT_DR:       ["severity 0", ..., "severity 5"],
-    PROJECT_SMARTBIN: ["Can", "Plastic", "Glass", "Cardboard"],
-    PROJECT_TELEMED:  ["Normal", "Suspicious", "Pathological"],
+    PROJECT_FUNDUS:  ["Severity 0", ..., "Severity 4"],
+    PROJECT_WASTE:   ["PET", "Can", "Plastic"],
+    PROJECT_TELEMED: ["Normal", "Suspicious", "Pathological"],
+}
+PROJECT_FILENAME_PREFIX = {
+    PROJECT_FUNDUS: "Fundus",
+    PROJECT_WASTE:  "Waste",
+    PROJECT_TELEMED: "Telemed",
 }
 ```
 
-Restart the application. The upload form, the dataset filters, and the export page all loop over `PROJECT_IDS`, so the new project shows up everywhere automatically.
+Restart. The upload form, dataset tabs, and export page all loop over
+`PROJECT_IDS`, so the new project appears everywhere automatically.
 
-### 4.4 Editing the label list of an existing project
-
-Same file, edit the corresponding entry inside `PROJECT_LABELS`. Existing labels stored in the database are unaffected — they remain visible in the dataset table. Newly labeled images use the updated list.
-
-### 4.5 Changing the upload size limit
-
-The 16 MB cap lives in [`backend/config.py`](backend/config.py):
+### 10.4 Changing the upload size limit
 
 ```python
+# backend/config.py
 MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 ```
 
-Adjust the multiplier and restart. The 413 error page (shown when an upload exceeds the cap) updates automatically.
+Edit and restart. The 413 error page is updated automatically.
 
-### 4.6 Switching to PostgreSQL
-
-In `.env`:
+### 10.5 Switching to PostgreSQL
 
 ```
 DATABASE_URL=postgresql://user:password@host:5432/dataset_labeling
 ```
 
-Then `pip install psycopg2-binary`. SQLAlchemy abstracts the dialect, so no code change is needed.
+Then `pip install psycopg2-binary`. SQLAlchemy abstracts the dialect;
+the model code is unchanged.
 
-### 4.7 Common problems and fixes
+### 10.6 Promoting a user from CLI
 
-| Symptom                                                     | Likely cause                                            | Fix                                                         |
-|-------------------------------------------------------------|---------------------------------------------------------|-------------------------------------------------------------|
-| `RuntimeError: Refusing to start with the default SecretKey` | `.env` missing or `SECRET_KEY` left at default          | Generate a key (see section 2 step 4)                       |
-| Browser shows "please fill in this field" on SmartBin after picking DR | Stale custom-validity message (already fixed)  | Hard refresh the page (`Ctrl+Shift+R`)                      |
-| "No labeled images in DR project yet" when you know there are some | Images are labeled in the *other* project        | Use the project filter on `/dataset` to confirm             |
-| Excel shows everything in one column                        | Excel is using `;` as the separator (FR/IT/ES locale)   | Open via *Data → From Text/CSV* and pick comma              |
-| 413 page after a big upload                                 | Total size of the batch exceeds 16 MB                   | Upload in smaller batches or change `MAX_CONTENT_LENGTH`    |
-| GLCM features are all zeros for some rows                   | Image file is missing or corrupted on disk              | Look for the file under `data/images/`; re-upload if needed |
+If you locked yourself out of the admin panel and `create_admin.py`
+seems heavy:
 
-### 4.8 Updating dependencies
+```
+.\.venv\Scripts\flask --app backend.app list-users
+.\.venv\Scripts\flask --app backend.app promote-admin <username>
+```
+
+If even the CLI fails, `create_admin.py` is the universal recovery
+path: it always restores the seed admin to a known state.
+
+### 10.7 Updating dependencies
 
 ```
 pip install --upgrade -r requirements.txt
 ```
 
-Then run a quick smoke test (section below) to confirm everything still works.
+Then run the smoke test (next section) to confirm nothing broke.
 
-### 4.9 Running a smoke test
+---
 
-After any change to the code or dependencies, verify the basics still respond. From an active virtual environment:
+## 11. Smoke testing
+
+After any structural change, verify the basics still work from an
+active virtual environment:
 
 ```python
-# In a Python shell:
 from backend.app import app
+
 client = app.test_client()
-for path in ["/", "/upload", "/label", "/dataset", "/export"]:
-    print(path, client.get(path).status_code)   # should be 200
+# Anonymous: protected routes bounce, public auth pages 200
+for path in ["/", "/annotation", "/dataset", "/export", "/admin/users"]:
+    r = client.get(path, follow_redirects=False)
+    assert r.status_code == 302 and "/login" in r.headers["Location"], path
+for path in ["/login", "/register", "/forgot"]:
+    assert client.get(path).status_code == 200, path
+
+# Schema sanity
+import json
+import re
+# (assume USERNAME already exists via create_admin.py)
+tok_html = client.get("/login").data.decode()
+csrf_token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tok_html).group(1)
+client.post("/login", data={"csrf_token": csrf_token,
+                             "username": "USERNAME", "password": "PASSWORD"})
+
+data = client.get("/export/json?project=Fundus").json
+# (If you have labeled Fundus images:)
+# assert len(data[0]) == 26
+# assert list(data[0])[0] == "img_path"
+# assert list(data[0])[-1] == "label"
 ```
 
-For exports, check both the HTTP status and the 26-column schema:
+The `frontend/static/js/*.js` files should also return 200 (cache
+disabled in DevTools, hard-refresh the page):
 
-```python
-import json
-data = json.loads(client.get("/export/json?project=DR").data)
-if data:
-    print("key count:", len(data[0]))                # should be 26
-    print("first key:", list(data[0])[0])             # 'img_path'
-    print("last key:", list(data[0])[-1])             # 'label'
+```
+/static/js/theme.js  toasts.js  auth.js  annotation.js  dataset.js  admin.js
 ```
 
 ---
 
-## 5. Appendix — file map
+## 12. Troubleshooting
 
-For maintainers who want a one-line summary of every file in the repository.
+| Symptom                                                                | Fix                                                                                                              |
+|------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
+| `RuntimeError: Refusing to start with the default SecretKey`           | Generate a real `SECRET_KEY` in `.env`, or set `FLASK_DEBUG=true` for local dev                                  |
+| `ModuleNotFoundError: No module named 'dotenv'` when running `flask`   | You are calling the system Python's `flask`; use `.venv\Scripts\flask` (Win) or `.venv/bin/flask` (Unix) instead |
+| `413 Request Entity Too Large`                                         | Upload exceeded 16 MB. Use a smaller file or change `MAX_CONTENT_LENGTH` in `backend/config.py`                  |
+| Excel opens the CSV in a single column                                 | Re-open via *Data &rarr; From Text/CSV* and pick `;` as the separator (or use a FR / IT / ES locale)             |
+| Other PCs on the Wi-Fi cannot reach the LAN server                     | Windows Firewall: allow Python on Private networks; or `New-NetFirewallRule -LocalPort 8080 -Action Allow ...`  |
+| GLCM features are all zeros for some rows                              | The image file is missing or unreadable on disk. Check the server logs and `data/images/<Label>/`               |
+| "Please log in to continue" loop                                       | Session cookies are blocked or `SECRET_KEY` changed between restarts (invalidates old sessions). Re-log in       |
+| Forgot the bootstrap admin password                                    | Re-run `create_admin.py` &mdash; it overwrites the password with the seed value                                  |
+| Want a clean slate                                                     | Stop the app, delete `database/dataset.db`, wipe `data/images/*` and `data/exports/*`, restart                  |
 
-```
-ModifV1_0_1_Correction/
-├── backend/
-│   ├── __init__.py            # marks the package
-│   ├── __main__.py            # entry point: `python -m backend`
-│   ├── app.py                 # Flask factory, error handlers, home route, local_time filter
-│   ├── config.py              # env-driven settings, project IDs, label sets, timezone
-│   ├── routes/
-│   │   ├── upload.py          # /upload (page + POST), /images/<filename>
-│   │   ├── label.py           # /label, /label/<id>, /label/<id>/delete, /dataset
-│   │   └── export.py          # /export, /export/csv, /export/json, /export/html
-│   ├── models/
-│   │   └── database.py        # SQLAlchemy + ImageRecord (one table)
-│   └── services/
-│       ├── image_service.py   # upload validation + persistence + safe deletion
-│       └── export_service.py  # CSV / JSON / HTML builders + GLCM extraction
-│
-├── frontend/
-│   ├── templates/             # base.html, index.html, upload.html, label.html, dashboard.html, export.html, errors/
-│   └── static/
-│       ├── css/app.css        # custom styles on top of Tailwind (image viewer, label-card states)
-│       └── js/                # labeling.js (zoom/pan/rotate), upload.js (dropzone), dataset.js
-│
-├── database/
-│   ├── schema.sql             # reference SQL (informational)
-│   └── dataset.db             # runtime DB, gitignored
-│
-├── data/
-│   ├── images/                # uploaded files, gitignored
-│   └── exports/               # generated CSV / JSON / HTML, gitignored
-│
-├── docs/
-│   ├── architecture.md        # short architecture overview
-│   ├── setup.md               # alternative install walk-through
-│   └── screenshots/           # UI captures for the report
-│
-├── run_server.py              # LAN production launcher (waitress + auto-IP)
-├── requirements.txt           # 10 pinned dependencies
-├── README.md                  # quick start + features
-├── TECHNICAL_GUIDE.md         # this file
-├── .env.example               # template for local secrets
-├── .env                       # local secrets, gitignored
-└── .gitignore
-```
+---
 
-### Routes at a glance
+## 13. Extending the application
 
-| Method | Path                  | What it does                                      |
-|--------|-----------------------|---------------------------------------------------|
-| GET    | `/`                   | Home page with summary                            |
-| GET    | `/upload`             | Upload form                                       |
-| POST   | `/upload`             | Process an upload (validates project, saves files)|
-| GET    | `/images/<filename>`  | Serve a stored image (path-traversal safe)        |
-| GET    | `/label`              | Labeling page (current image + buttons)           |
-| POST   | `/label/<id>`         | Record a label, jump to next image                |
-| POST   | `/label/<id>/delete`  | Remove an image (file + DB row)                   |
-| GET    | `/dataset`            | Dataset table with filters                        |
-| GET    | `/export`             | Export page                                       |
-| GET    | `/export/csv`         | CSV download — 26 columns, `;` delimiter          |
-| GET    | `/export/json`        | JSON download — same 26 keys, flat structure      |
-| GET    | `/export/html`        | Self-contained HTML preview (image \| label)      |
+- **More projects** &mdash; see Section 10.3. The UI loops over
+  `PROJECT_IDS` so new projects need no template changes.
+- **Email-based password recovery** &mdash; add a Flask-Mail integration
+  in `backend/routes/auth.py`. Generate a signed token (via
+  `itsdangerous`) instead of the session-based step.
+- **Activity log / audit trail** &mdash; add a `LabelEvent` model with
+  `user_id`, `image_id`, `action`, `timestamp`. Insert a row at every
+  POST inside `annotation.py` / `admin.py`.
+- **Image content validation** &mdash; after `file.save()` in
+  `persist_pending_image()`, call `PIL.Image.open(target).verify()`. If
+  it raises, delete the file and reject.
+- **Multi-label per image** &mdash; replace `label` with a
+  `image_labels` association table. Update the labeling UI to use
+  checkboxes; update exports to emit a list.
+- **Cloud storage** &mdash; replace `file.save()` with an S3 / GCS
+  upload. Adjust `serve_image()` to either stream or return a presigned
+  URL.
+
+---
+
+## 14. Appendix &mdash; file map
+
+A one-line description of every Python and JavaScript file in the repo.
+
+| File                                                | Responsibility                                                       |
+|-----------------------------------------------------|----------------------------------------------------------------------|
+| `backend/__init__.py`                               | Marks `backend` as a Python package                                  |
+| `backend/__main__.py`                               | `python -m backend` entry point                                      |
+| `backend/app.py`                                    | Flask factory, login manager, error handlers, CLI commands           |
+| `backend/config.py`                                 | Env-driven settings, project metadata, timezone                      |
+| `backend/forms.py`                                  | WTForms (Login / Register / Forgot / Reset)                          |
+| `backend/auth_utils.py`                             | `@admin_required` decorator                                          |
+| `backend/routes/auth.py`                            | Public auth endpoints + POST `/logout`                               |
+| `backend/routes/annotation.py`                      | 2-step annotation + image serving + dataset browser                  |
+| `backend/routes/export.py`                          | Export page + CSV / JSON / HTML downloads                            |
+| `backend/routes/admin.py`                           | Admin user management                                                |
+| `backend/models/database.py`                        | `db` (SQLAlchemy), `User`, `ImageRecord`                             |
+| `backend/services/image_service.py`                 | Upload validation, sequential naming, label-folder routing           |
+| `backend/services/export_service.py`                | GLCM extraction, CSV / JSON / HTML builders                          |
+| `frontend/templates/base.html`                      | Shared layout (Tailwind, navbar, toasts, theme toggle)               |
+| `frontend/templates/index.html`                     | Home page                                                            |
+| `frontend/templates/annotation.html`                | Two-mode annotation form                                             |
+| `frontend/templates/dashboard.html`                 | Dataset browser (tabs + search + pagination)                         |
+| `frontend/templates/export.html`                    | Export cards                                                         |
+| `frontend/templates/auth/{login,register,forgot,reset}.html` | Auth pages                                                  |
+| `frontend/templates/admin/users.html`               | Admin user-management table                                          |
+| `frontend/templates/errors/{403,404,500}.html`      | Branded error pages                                                  |
+| `frontend/static/css/app.css`                       | Minimal custom CSS (image viewer geometry, transitions)              |
+| `frontend/static/js/theme.js`                       | Light / Dark toggle (localStorage)                                   |
+| `frontend/static/js/toasts.js`                      | Auto-dismiss + close-button delegation                               |
+| `frontend/static/js/auth.js`                        | Password-match live check + English validation messages              |
+| `frontend/static/js/annotation.js`                  | Dropzone + custom image viewer (zoom/pan/rotate)                     |
+| `frontend/static/js/dataset.js`                     | Search + pagination + delete confirm                                 |
+| `frontend/static/js/admin.js`                       | User-delete confirm dialog                                           |
+| `database/schema.sql`                               | Reference SQL for `users` and `images`                               |
+| `run_server.py`                                     | LAN production launcher (waitress + auto-IP)                         |
+| `create_admin.py`                                   | One-shot seed script for the bootstrap admin account                 |
+| `requirements.txt`                                  | 11 pinned dependencies                                               |
+| `.env.example`                                      | Template for local secrets                                           |
+| `.gitignore`                                        | Ignores caches, venv, DB, runtime data, `.env`                       |
