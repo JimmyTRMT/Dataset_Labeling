@@ -1,5 +1,4 @@
 """Admin blueprint: manage users (list, promote, demote, delete).
-
 Every route is behind @admin_required so non-admins (including anonymous)
 get a 403. We also guard against the obvious foot-guns:
   * an admin cannot demote themselves if they are the only one left
@@ -58,7 +57,7 @@ def change_role(user_id: int):
         return redirect(url_for("admin.users_list"))
 
     # Refuse to demote yourself if you would leave the system without an
-    # admin (e.g. you are the only admin left).
+    # admin (you are the only admin left).
     if target.id == current_user.id and new_role == ROLE_ANNOTATOR:
         remaining_admins = User.query.filter_by(role=ROLE_ADMIN).count()
         if remaining_admins <= 1:

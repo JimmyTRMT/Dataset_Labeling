@@ -120,7 +120,7 @@ def register():
 
 
 # ---------------------------------------------------------------------------
-# Forgot password - 2-step recovery via security question
+# Forgot password : 2-step recovery via security question
 # ---------------------------------------------------------------------------
 
 # Session key holding the username under recovery between steps 1 and 2.
