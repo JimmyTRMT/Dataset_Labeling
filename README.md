@@ -218,7 +218,7 @@ Output looks like:
 ================================================================
   Server online on port 8080
   This PC (server)     : http://127.0.0.1:8080
-  Same Wi-Fi   : http://10.106.1.88:8080
+  Same Wi-Fi   : http://XX.XXX.X.XX:8080
 ```
 
 Other PCs on the same Wi-Fi reach the app at the second URL.
