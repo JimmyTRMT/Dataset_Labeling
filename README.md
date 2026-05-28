@@ -38,7 +38,15 @@ data separation:
    Dataset). Each tab shows a table with thumbnail, filename, label,
    **description**, author and upload date. Per-tab text search and
    pagination (10 / 25 / 50 / 100 rows).
-6. **Exports** &mdash; one card per project, three formats:
+6. **Per-project analytics dashboard** &mdash; each project card on the
+   home page links to `/dashboard/<project>`, a live view that combines
+   a typed label breakdown (counts + percentages) on the left and a
+   Chart.js doughnut chart on the right. Labels and counts are pulled
+   straight from SQL (`GROUP BY label`), so the chart always reflects
+   the current state of the database &mdash; no hardcoded lists, no
+   manual refresh. Colours adapt to Light / Dark mode without a page
+   reload.
+7. **Exports** &mdash; one card per project, three formats:
    - **CSV** &mdash; 26 columns, semicolon-separated, opens directly in
      European Excel (FR / IT / ES locales) and pandas.
    - **JSON** &mdash; same 26 keys, flat structure, ready for any ML
@@ -49,7 +57,7 @@ data separation:
      features** (`contrast, dissimilarity, homogeneity, energy,
      correlation, asm`) for every image, expanded into 24 separate
      columns (4 directions each).
-7. **Theme** &mdash; modern UI (Tailwind CSS) with an instant Light /
+8. **Theme** &mdash; modern UI (Tailwind CSS) with an instant Light /
    Dark toggle, persisted in `localStorage`. Annotation viewer uses CSS
    transforms (no third-party library).
 
@@ -87,6 +95,7 @@ ModifV1_0_1_Correction/
 │   ├── routes/
 │   │   ├── auth.py              /login /logout /register /forgot /reset
 │   │   ├── annotation.py        /annotation (2-step), /images/<filename>, /dataset/<project>
+│   │   ├── dashboard.py         /dashboard/<dataset_type> analytics view
 │   │   ├── export.py            /export, /export/csv, /export/json, /export/html
 │   │   └── admin.py             /admin/users + promote / demote / delete
 │   ├── models/database.py       User + ImageRecord ORM
@@ -94,10 +103,10 @@ ModifV1_0_1_Correction/
 │       ├── image_service.py     file validation, sequential naming, label-folder routing
 │       └── export_service.py    CSV / JSON / HTML builders + GLCM extraction
 ├── frontend/
-│   ├── templates/               base + index + annotation + dashboard + export + auth/* + admin/* + errors/
+│   ├── templates/               base + index + annotation + dashboard + analytics + export + auth/* + admin/* + errors/
 │   └── static/
 │       ├── css/app.css          minimal custom CSS on top of Tailwind
-│       └── js/                  theme.js, toasts.js, annotation.js, dataset.js, auth.js, admin.js
+│       └── js/                  theme.js, toasts.js, annotation.js, dataset.js, dashboard.js, auth.js, admin.js
 ├── database/
 │   ├── schema.sql               reference SQL schema (DB created at runtime)
 │   └── dataset.db               runtime DB (gitignored)
@@ -235,9 +244,14 @@ Behind nginx or Caddy.
 3. **Browse** `/dataset` &rarr; switch between the Fundus and
    WasteSorting tabs, search by filename, paginate. Delete with
    confirmation.
-4. **Export** `/export` &rarr; CSV / JSON (26-column GLCM schema) or HTML
+4. **Inspect distribution** &rarr; click the **Fundus images** or
+   **WasteSorting images** card on the home page to open
+   `/dashboard/<project>`. You get a live label breakdown (counts,
+   percentages) and a doughnut chart. Labels are queried from SQL, so
+   the chart updates the moment a new annotation lands.
+5. **Export** `/export` &rarr; CSV / JSON (26-column GLCM schema) or HTML
    (visual preview), one card per project.
-5. **Manage users** (admins only) &rarr; `/admin/users` to promote,
+6. **Manage users** (admins only) &rarr; `/admin/users` to promote,
    demote or delete accounts.
 
 ---

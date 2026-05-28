@@ -9,8 +9,7 @@ db = SQLAlchemy()
 
 
 # Two user roles. Admins are reserved for future privileged actions; for
-# now every user can annotate and browse. The first registered user is
-# promoted to admin so the app is usable out of the box without a CLI.
+# now every user can annotate and browse.
 ROLE_ADMIN = "admin"
 ROLE_ANNOTATOR = "annotator"
 

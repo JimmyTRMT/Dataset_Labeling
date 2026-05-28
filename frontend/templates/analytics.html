@@ -1,0 +1,113 @@
+
+{% block head_extra %}
+    {# Chart.js is loaded only on the dashboard so other pages stay lean. #}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <header class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-semibold">Dashboard: {{ dataset_type }}</h1>
+            <p class="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Live label distribution for the
+                {% if dataset_type == 'Fundus' %}Fundus (diabetic retinopathy)
+                {% elif dataset_type == 'WasteSorting' %}WasteSorting (waste classification)
+                {% else %}{{ dataset_type }}{% endif %}
+                dataset.
+            </p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('home') }}"
+               class="px-3 py-1.5 text-sm rounded-md border border-slate-200 dark:border-slate-700
+                      hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                &larr; Home
+            </a>
+            <a href="{{ url_for('annotation.dataset_for_project', project_id=dataset_type) }}"
+               class="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                Browse images
+            </a>
+        </div>
+    </header>
+
+    {% if label_counts %}
+        <section class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+            {# Left: label list. Counts and percentages come from the same
+               server-rendered numbers as the chart, so they cannot drift. #}
+            <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <div class="flex items-baseline justify-between mb-4">
+                    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Label distribution
+                    </h2>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">
+                        {{ total }} image{{ '' if total == 1 else 's' }}
+                    </span>
+                </div>
+
+                <ul class="space-y-2">
+                    {% for item in label_counts %}
+                        {% set percent = (item.count * 100.0 / total) if total else 0 %}
+                        <li class="flex items-center justify-between gap-3 px-3 py-2 rounded-md
+                                   bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0"
+                                      data-legend-dot data-index="{{ loop.index0 }}"></span>
+                                <span class="font-medium truncate">{{ item.label }}</span>
+                            </div>
+                            <div class="flex items-baseline gap-2 shrink-0">
+                                <span class="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                    {{ item.count }}
+                                </span>
+                                <span class="text-xs text-slate-500 dark:text-slate-400">
+                                    image{{ '' if item.count == 1 else 's' }}
+                                    &middot; {{ '%.1f' % percent }}%
+                                </span>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            {# Right: doughnut chart. Data + canvas are kept here; rendering
+               lives in dashboard.js. The JSON script tag is the secure
+               handover channel (no JS in the template, no string concat). #}
+            <div class="lg:col-span-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4">
+                    Visual breakdown
+                </h2>
+                <div class="relative w-full max-w-md mx-auto" style="min-height: 320px;">
+                    <canvas id="datasetChart"
+                            data-dataset-type="{{ dataset_type }}"
+                            aria-label="Doughnut chart: label distribution for {{ dataset_type }}">
+                    </canvas>
+                </div>
+            </div>
+
+        </section>
+
+        <script id="chart-data" type="application/json">{{ label_counts | tojson }}</script>
+    {% else %}
+        <section class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-8 text-center">
+            <p class="text-slate-600 dark:text-slate-300">
+                No labeled images in <span class="font-semibold">{{ dataset_type }}</span> yet.
+            </p>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                Once images are annotated, their label breakdown will appear here.
+            </p>
+            <a href="{{ url_for('annotation.annotation_page') }}"
+               class="inline-block mt-4 px-4 py-2 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                Annotate now
+            </a>
+        </section>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+    {% if label_counts %}
+        <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    {% endif %}
+{% endblock %}

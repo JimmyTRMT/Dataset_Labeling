@@ -19,6 +19,7 @@ from backend.models.database import ImageRecord, ROLE_ADMIN, User, db
 from backend.routes.admin import admin_bp
 from backend.routes.annotation import annotation_bp
 from backend.routes.auth import auth_bp
+from backend.routes.dashboard import dashboard_bp
 from backend.routes.export import export_bp
 
 
@@ -84,6 +85,7 @@ def create_app() -> Flask:
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(admin_bp)
     flask_app.register_blueprint(annotation_bp)
+    flask_app.register_blueprint(dashboard_bp)
     flask_app.register_blueprint(export_bp)
 
     flask_app.jinja_env.filters["local_time"] = local_time

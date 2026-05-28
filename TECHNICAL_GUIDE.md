@@ -21,13 +21,14 @@ script, day-to-day maintenance and common troubleshooting.
 5. [The seed admin script (`create_admin.py`)](#5-the-seed-admin-script-create_adminpy)
 6. [Annotation workflow (two steps)](#6-annotation-workflow-two-steps)
 7. [Dataset browser](#7-dataset-browser)
-8. [Exports and GLCM texture features](#8-exports-and-glcm-texture-features)
-9. [Theme system (Light / Dark)](#9-theme-system-light--dark)
-10. [Maintenance](#10-maintenance)
-11. [Smoke testing](#11-smoke-testing)
-12. [Troubleshooting](#12-troubleshooting)
-13. [Extending the application](#13-extending-the-application)
-14. [Appendix &mdash; file map](#14-appendix--file-map)
+8. [Analytics dashboard](#8-analytics-dashboard)
+9. [Exports and GLCM texture features](#9-exports-and-glcm-texture-features)
+10. [Theme system (Light / Dark)](#10-theme-system-light--dark)
+11. [Maintenance](#11-maintenance)
+12. [Testing](#12-Testing)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Extending the application](#14-extending-the-application)
+15. [Appendix &mdash; file map](#15-appendix--file-map)
 
 ---
 
@@ -62,7 +63,7 @@ The application gives a research team **one place** to:
   security question chosen at registration.
 - **No automatic off-site backup** &mdash; manual backup of
   `database/dataset.db` and `data/images/` is the team's responsibility
-  (see [Section 10](#10-maintenance)).
+  (see [Section 11](#11-maintenance)).
 - **No multi-language UI** &mdash; the UI ships in English. Labels and
   free-form fields handle any UTF-8 content (incl. Thai, French
   accents).
@@ -184,21 +185,21 @@ gunicorn "backend.app:app" -b 0.0.0.0:8000 -w 4
 |  toasts, theme)    |                                 |
 +--------------------+                                 |
                                                        v
-  +----------------+   +------------------+   +-------------------+   +----------------+
-  |  auth_bp       |   |  annotation_bp   |   |     export_bp     |   |    admin_bp    |
-  |  (login,       |   |  (2-step         |   |  (CSV / JSON /    |   |  (user mgmt:   |
-  |   register,    |   |   upload+label,  |   |   HTML, GLCM      |   |   promote/     |
-  |   forgot,      |   |   dataset        |   |   computed here)  |   |   demote/      |
-  |   reset,       |   |   browser)       |   |                   |   |   delete)      |
-  |   logout)      |   |                  |   |                   |   |                |
-  +-------+--------+   +--------+---------+   +---------+---------+   +-------+--------+
-          |                     |                       |                     |
-          v                     v                       v                     v
-   +-------------+      +------------------+    +------------------+    +-------------+
-   | forms.py    |      | image_service.py |    | export_service   |    | auth_utils  |
-   | (WTForms)   |      | (validation,     |    | (GLCM, CSV,      |    | (decorators)|
-   +-------------+      |  rename,         |    |  JSON, HTML)     |    +-------------+
-                        |  folder routing) |    +---------+--------+
+  +----------------+   +------------------+   +-------------------+   +----------------+   +----------------+
+  |  auth_bp       |   |  annotation_bp   |   |     export_bp     |   |  dashboard_bp  |   |    admin_bp    |
+  |  (login,       |   |  (2-step         |   |  (CSV / JSON /    |   |  (per-project  |   |  (user mgmt:   |
+  |   register,    |   |   upload+label,  |   |   HTML, GLCM      |   |   analytics:   |   |   promote/     |
+  |   forgot,      |   |   dataset        |   |   computed here)  |   |   label counts |   |   demote/      |
+  |   reset,       |   |   browser)       |   |                   |   |   + chart)     |   |   delete)      |
+  |   logout)      |   |                  |   |                   |   |                |   |                |
+  +-------+--------+   +--------+---------+   +---------+---------+   +-------+--------+   +-------+--------+
+          |                     |                       |                     |                    |
+          v                     v                       v                     v                    v
+   +-------------+      +------------------+    +------------------+    +------------------+   +-------------+
+   | forms.py    |      | image_service.py |    | export_service   |    | SQL group_by     |   | auth_utils  |
+   | (WTForms)   |      | (validation,     |    | (GLCM, CSV,      |    |  on label +      |   | (decorators)|
+   +-------------+      |  rename,         |    |  JSON, HTML)     |    |  Chart.js (front)|   +-------------+
+                        |  folder routing) |    +---------+--------+    +------------------+
                         +--------+---------+              |
                                  |                        v
                                  v               data/exports/
@@ -222,6 +223,7 @@ ModifV1_0_1_Correction/
 │   ├── routes/
 │   │   ├── auth.py               Public auth routes (and POST /logout)
 │   │   ├── annotation.py         2-step annotation + image serving + dataset browser
+│   │   ├── dashboard.py          /dashboard/<dataset_type> analytics view
 │   │   ├── export.py             /export and CSV / JSON / HTML downloads
 │   │   └── admin.py              /admin/users + promote / demote / delete
 │   ├── models/database.py        SQLAlchemy + User + ImageRecord
@@ -232,9 +234,10 @@ ModifV1_0_1_Correction/
 ├── frontend/
 │   ├── templates/
 │   │   ├── base.html             Shared layout (Tailwind, navbar, toasts, theme toggle)
-│   │   ├── index.html            Home with stat cards
+│   │   ├── index.html            Home with stat cards (each project card links to its dashboard)
 │   │   ├── annotation.html       2-mode form (upload then label)
 │   │   ├── dashboard.html        Dataset browser (project tabs + search + pagination)
+│   │   ├── analytics.html        Per-project analytics page (list + Chart.js doughnut)
 │   │   ├── export.html           Export cards per project
 │   │   ├── auth/
 │   │   │   ├── login.html
@@ -250,6 +253,7 @@ ModifV1_0_1_Correction/
 │           ├── toasts.js         Auto-dismiss + close-button delegation
 │           ├── annotation.js     Dropzone + custom image viewer (zoom/pan/rotate)
 │           ├── dataset.js        Search + pagination + delete confirm
+│           ├── dashboard.js      Chart.js doughnut + theme-aware re-render
 │           ├── auth.js           Password-match live check + English validation
 │           └── admin.js          Delete-user confirm dialog
 │
@@ -289,6 +293,7 @@ ModifV1_0_1_Correction/
 | `/images/<filename>`                            | GET      | blueprint-wide      | Serve a stored image (path-traversal safe)                  |
 | `/dataset`                                      | GET      | blueprint-wide      | Redirect to `/dataset/Fundus`                               |
 | `/dataset/<project_id>`                         | GET      | blueprint-wide      | Project-scoped browser with tabs                            |
+| `/dashboard/<dataset_type>`                     | GET      | blueprint-wide      | Per-project analytics (label counts + doughnut chart)       |
 | `/export`                                       | GET      | blueprint-wide      | Per-project export cards                                    |
 | `/export/csv?project=<id>`                      | GET      | blueprint-wide      | 26-column CSV with `;` delimiter                            |
 | `/export/json?project=<id>`                     | GET      | blueprint-wide      | Same 26 keys, flat JSON                                     |
@@ -579,7 +584,147 @@ the entire labeled set for the active project.
 
 ---
 
-## 8. Exports and GLCM texture features
+## 8. Analytics dashboard
+
+A live, per-project view of how the labels are distributed. The
+dashboard answers the kind of questions that come up in every team
+meeting: *"Are we balanced across the severity grades yet ?"*,
+*"How many PET images do we have today ?"*, *"Which class are we
+under-collecting?"*.
+
+### Where to find it
+
+The dashboard is **discovered from the home page**, not from the
+navbar. The two project cards on `/` (Fundus images and WasteSorting
+images) are now clickable links to `/dashboard/<dataset_type>`. Each
+card lifts on hover and reveals a small "View dashboard &rarr;" hint
+so users notice it is interactive. There is intentionally **no nav-bar
+entry** &mdash; the dashboard is a *drill-down* from the headline
+counts, not a separate top-level area, so the navbar stays focused on
+the everyday workflow (Annotation, Dataset, Export, Admin).
+
+### Backend (`backend/routes/dashboard.py`)
+
+The blueprint exposes a single endpoint:
+
+```
+GET /dashboard/<dataset_type>
+```
+
+Same protection model as `annotation_bp` and `export_bp`: a
+`@blueprint.before_request @login_required` guard rejects anonymous
+visitors with a 302 to `/login?next=...`. An unknown `dataset_type`
+(anything not in `PROJECT_IDS`) returns a 404 via `abort(404)` &mdash;
+no flash, no redirect, just a clean error page.
+
+The label counts are queried **directly in SQL** so the route, the
+template and the JavaScript never hold a hardcoded label list:
+
+```python
+rows = (
+    db.session.query(ImageRecord.label, func.count(ImageRecord.id))
+    .filter(ImageRecord.project == dataset_type)
+    .filter(ImageRecord.status == "labeled")
+    .filter(ImageRecord.label.isnot(None))
+    .group_by(ImageRecord.label)
+    .order_by(ImageRecord.label.asc())
+    .all()
+)
+```
+
+What this gives you for free:
+
+- New labels appear in the dashboard the moment they appear in the
+  data &mdash; no template change needed.
+- A label that nobody is using anymore disappears on its own.
+- Only `status="labeled"` rows are counted, so pending uploads never
+  skew the distribution.
+
+The route hands the template a `label_counts` list (each item is
+`{"label": ..., "count": ...}`) plus the precomputed `total`.
+
+### Template (`frontend/templates/analytics.html`)
+
+The page uses a 5-column Tailwind grid that collapses to a single
+column on mobile:
+
+- **Left (2/5 width)** &mdash; a typed list of every label with its
+  raw count and its percentage of the total. Counts are
+  server-rendered, so they always match the chart exactly &mdash; no
+  risk of drift between two number sources.
+- **Right (3/5 width)** &mdash; a `<canvas id="datasetChart">` that
+  hosts the Chart.js doughnut.
+
+The handover between Flask and JavaScript follows the **no-inline-JS**
+rule used everywhere else in the project. Data lives in a
+typed-content script tag:
+
+```html
+<script id="chart-data" type="application/json">{{ label_counts | tojson }}</script>
+```
+
+`tojson` is Jinja's safe filter for this: it produces escaped JSON
+that cannot break out of the script tag, even if a label one day
+contains characters like `</script>` or `<` &mdash; XSS-safe by
+construction. The `<canvas>` also carries a `data-dataset-type`
+attribute. Those two DOM nodes are the **only** things `dashboard.js`
+reads.
+
+If the project has zero labeled images yet, the template renders a
+friendly empty-state card with a call-to-action toward `/annotation`
+instead of an empty chart. In that case the Chart.js CDN is still
+loaded (via `head_extra`) but `dashboard.js` is **not** included,
+because the `#chart-data` tag is absent &mdash; nothing to render.
+
+### Frontend (`frontend/static/js/dashboard.js`)
+
+A small, dependency-free module that:
+
+1. Parses the JSON payload from `#chart-data` inside a `try/catch`
+   (defensive against a malformed payload &mdash; the chart simply
+   does not render).
+2. Picks colours from an **eight-colour soft palette** (blue,
+   emerald, amber, red, violet, cyan, orange, pink &mdash; all `*-400`
+   shades). The palette cycles if more labels than colours exist, but
+   each project has at most five labels so that limit is theoretical.
+3. **Mirrors** the chosen slice colours onto the legend dots in the
+   left-hand list, so the colour key on each side stays in sync
+   without duplicating logic in two files.
+4. Renders a `doughnut` chart via Chart.js. Tooltip format:
+   `Label: N images (PP.P%)`. Hover offset is enabled so the active
+   slice pops out slightly.
+5. Watches `<html>` for `class` changes via `MutationObserver`. When
+   the user toggles Light / Dark in the navbar, the chart re-renders
+   **in place** with theme-appropriate legend text, title text and
+   slice borders &mdash; no full page reload.
+
+Chart.js itself is loaded from `cdn.jsdelivr.net` in the
+`{% block head_extra %}` of `analytics.html` only, so other pages
+stay lean and the CDN script never costs them anything.
+
+### Routing summary
+
+| URL                                | Behaviour                                                              |
+|------------------------------------|------------------------------------------------------------------------|
+| Anonymous &rarr; any `/dashboard/*`| 302 to `/login?next=/dashboard/<dataset_type>`                         |
+| Logged-in + valid `dataset_type`   | 200 with the analytics page                                            |
+| Logged-in + unknown `dataset_type` | 404 (branded error page)                                               |
+| Project has no labeled images yet  | 200 with the empty-state card (no chart rendered)                      |
+
+### Common tweaks
+
+| Want to...                              | Touch                                                       |
+|-----------------------------------------|-------------------------------------------------------------|
+| Add a third project                     | Already automatic &mdash; extend `PROJECT_IDS` (Section 11.3) |
+| Switch from doughnut to pie or bar      | `type: "doughnut"` in `dashboard.js`                        |
+| Use a different colour palette          | `PALETTE` array at the top of `dashboard.js`                |
+| Include unlabeled rows in the count     | Drop the `status="labeled"` filter in `dashboard.py`        |
+| Break down by author instead of label   | Group by `ImageRecord.contributor` in the SQL query         |
+| Show two projects on one page           | Render two chart canvases + two JSON tags with distinct IDs |
+
+---
+
+## 9. Exports and GLCM texture features
 
 ### GLCM in plain language
 
@@ -674,7 +819,7 @@ inline styles (independent of Tailwind) so it works offline.
 
 ---
 
-## 9. Theme system (Light / Dark)
+## 10. Theme system (Light / Dark)
 
 ### How it works
 
@@ -700,9 +845,9 @@ and `blue-400` for dark-mode text).
 
 ---
 
-## 10. Maintenance
+## 11. Maintenance
 
-### 10.1 Backing up the dataset
+### 11.1 Backing up the dataset
 
 | What                | Where                       | How                                                                   |
 |---------------------|-----------------------------|-----------------------------------------------------------------------|
@@ -712,7 +857,7 @@ and `blue-400` for dark-mode text).
 
 A weekly cron job that zips both folders is usually enough.
 
-### 10.2 Resetting the application
+### 11.2 Resetting the application
 
 Stop the app first, then:
 
@@ -726,7 +871,7 @@ rm -rf data/exports/*
 re-creates the schema. Run `create_admin.py` again to seed an admin
 account.
 
-### 10.3 Adding or editing labels for a project
+### 11.3 Adding or editing labels for a project
 
 Open `backend/config.py` and edit the `PROJECT_LABELS` dict. Existing
 labels in the DB are untouched; new annotations use the updated list.
@@ -752,7 +897,7 @@ PROJECT_FILENAME_PREFIX = {
 Restart. The upload form, dataset tabs, and export page all loop over
 `PROJECT_IDS`, so the new project appears everywhere automatically.
 
-### 10.4 Changing the upload size limit
+### 11.4 Changing the upload size limit
 
 ```python
 # backend/config.py
@@ -761,7 +906,7 @@ MAX_CONTENT_LENGTH = 16 * 1024 * 1024
 
 Edit and restart. The 413 error page is updated automatically.
 
-### 10.5 Switching to PostgreSQL
+### 11.5 Switching to PostgreSQL
 
 ```
 DATABASE_URL=postgresql://user:password@host:5432/dataset_labeling
@@ -770,7 +915,7 @@ DATABASE_URL=postgresql://user:password@host:5432/dataset_labeling
 Then `pip install psycopg2-binary`. SQLAlchemy abstracts the dialect;
 the model code is unchanged.
 
-### 10.6 Promoting a user from CLI
+### 11.6 Promoting a user from CLI
 
 If you locked yourself out of the admin panel and `create_admin.py`
 seems heavy:
@@ -783,17 +928,17 @@ seems heavy:
 If even the CLI fails, `create_admin.py` is the universal recovery
 path: it always restores the seed admin to a known state.
 
-### 10.7 Updating dependencies
+### 11.7 Updating dependencies
 
 ```
 pip install --upgrade -r requirements.txt
 ```
 
-Then run the smoke test (next section) to confirm nothing broke.
+Then run the test (next section) to confirm nothing broke.
 
 ---
 
-## 11. Smoke testing
+## 12. Testing
 
 After any structural change, verify the basics still work from an
 active virtual environment:
@@ -829,12 +974,12 @@ The `frontend/static/js/*.js` files should also return 200 (cache
 disabled in DevTools, hard-refresh the page):
 
 ```
-/static/js/theme.js  toasts.js  auth.js  annotation.js  dataset.js  admin.js
+/static/js/theme.js  toasts.js  auth.js  annotation.js  dataset.js  dashboard.js  admin.js
 ```
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Symptom                                                                | Fix                                                                                                              |
 |------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
@@ -850,9 +995,9 @@ disabled in DevTools, hard-refresh the page):
 
 ---
 
-## 13. Extending the application
+## 14. Extending the application
 
-- **More projects** &mdash; see Section 10.3. The UI loops over
+- **More projects** &mdash; see Section 11.3. The UI loops over
   `PROJECT_IDS` so new projects need no template changes.
 - **Email-based password recovery** &mdash; add a Flask-Mail integration
   in `backend/routes/auth.py`. Generate a signed token (via
@@ -872,7 +1017,7 @@ disabled in DevTools, hard-refresh the page):
 
 ---
 
-## 14. Appendix &mdash; file map
+## 15. Appendix &mdash; file map
 
 A one-line description of every Python and JavaScript file in the repo.
 
@@ -886,15 +1031,17 @@ A one-line description of every Python and JavaScript file in the repo.
 | `backend/auth_utils.py`                             | `@admin_required` decorator                                          |
 | `backend/routes/auth.py`                            | Public auth endpoints + POST `/logout`                               |
 | `backend/routes/annotation.py`                      | 2-step annotation + image serving + dataset browser                  |
+| `backend/routes/dashboard.py`                       | Per-project analytics route (`/dashboard/<dataset_type>`)            |
 | `backend/routes/export.py`                          | Export page + CSV / JSON / HTML downloads                            |
 | `backend/routes/admin.py`                           | Admin user management                                                |
 | `backend/models/database.py`                        | `db` (SQLAlchemy), `User`, `ImageRecord`                             |
 | `backend/services/image_service.py`                 | Upload validation, sequential naming, label-folder routing           |
 | `backend/services/export_service.py`                | GLCM extraction, CSV / JSON / HTML builders                          |
 | `frontend/templates/base.html`                      | Shared layout (Tailwind, navbar, toasts, theme toggle)               |
-| `frontend/templates/index.html`                     | Home page                                                            |
+| `frontend/templates/index.html`                     | Home page (project cards link to per-dataset dashboards)             |
 | `frontend/templates/annotation.html`                | Two-mode annotation form                                             |
 | `frontend/templates/dashboard.html`                 | Dataset browser (tabs + search + pagination)                         |
+| `frontend/templates/analytics.html`                 | Per-project analytics page (list + doughnut chart)                   |
 | `frontend/templates/export.html`                    | Export cards                                                         |
 | `frontend/templates/auth/{login,register,forgot,reset}.html` | Auth pages                                                  |
 | `frontend/templates/admin/users.html`               | Admin user-management table                                          |
@@ -905,6 +1052,7 @@ A one-line description of every Python and JavaScript file in the repo.
 | `frontend/static/js/auth.js`                        | Password-match live check + English validation messages              |
 | `frontend/static/js/annotation.js`                  | Dropzone + custom image viewer (zoom/pan/rotate)                     |
 | `frontend/static/js/dataset.js`                     | Search + pagination + delete confirm                                 |
+| `frontend/static/js/dashboard.js`                   | Chart.js doughnut + theme-aware re-render (analytics page)           |
 | `frontend/static/js/admin.js`                       | User-delete confirm dialog                                           |
 | `database/schema.sql`                               | Reference SQL for `users` and `images`                               |
 | `run_server.py`                                     | LAN production launcher (waitress + auto-IP)                         |
