@@ -1,13 +1,10 @@
 {% extends "base.html" %}
-{# BUG: this `extends` directive MUST stay on line 1. Without it,
-   Jinja renders the blocks below in isolation -> no <html>, no <head>,
-   no navbar, and most importantly NO Tailwind script tag. The page
-   then displays as raw unstyled HTML even though Chart.js still loads
-   from head_extra. Don't let a linter strip it. #}
+{# Keep `extends` on line 1: without it, blocks render in isolation and
+   the page loses base.html (no navbar, no Tailwind). #}
 {% block title %}Dashboard: {{ dataset_type }} - Dataset Labeling Platform{% endblock %}
 
 {% block head_extra %}
-    {# Chart.js is loaded only on the dashboard so other pages stay lean. #}
+    {# Chart.js loaded here only - keeps other pages lean. #}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 {% endblock %}
 
@@ -41,8 +38,7 @@
     {% if label_counts %}
         <section class="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-            {# Left: label list. Counts and percentages come from the same
-               server-rendered numbers as the chart, so they cannot drift. #}
+            {# Left: list. Counts come from the same server data as the chart. #}
             <div class="lg:col-span-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                 <div class="flex items-baseline justify-between mb-4">
                     <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -77,16 +73,13 @@
                 </ul>
             </div>
 
-            {# Right: doughnut chart. Data + canvas are kept here; rendering
-               lives in dashboard.js. The JSON script tag is the secure
-               handover channel (no JS in the template, no string concat). #}
+            {# Right: chart. Data ships via the JSON script tag - no JS in this template. #}
             <div class="lg:col-span-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
                 <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4">
                     Visual breakdown
                 </h2>
-                {# Strict-height wrapper: Chart.js with maintainAspectRatio:false
-                   fills its parent box, so the parent MUST have a fixed height
-                   (not just min-height) or the canvas grows unbounded. #}
+                {# Fixed height required: Chart.js + maintainAspectRatio:false
+                   needs a bounded parent or the canvas grows unbounded. #}
                 <div class="relative w-full h-[400px] mx-auto">
                     <canvas id="datasetChart"
                             data-dataset-type="{{ dataset_type }}"

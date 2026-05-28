@@ -1,16 +1,9 @@
-// Annotation page interactions. The page renders in two distinct modes
-// driven by the Flask template:
-//   - upload mode: dropzone + author/description form,
-//   - label  mode: image viewer (zoom/pan/rotate/flip) + label cards.
-// We detect the mode by the presence of the relevant DOM nodes so the
-// same file handles both without a flag.
+// Annotation page: upload mode (dropzone + form) and label mode
+// (viewer + label cards). Mode is detected from the DOM, not a flag.
 
 (function () {
 
-    /* ====================================================================
-       UPLOAD MODE
-       ====================================================================
-       Wires the dropzone, file-name label, and English validation. */
+    /* ---- upload mode ------------------------------------------------ */
 
     var uploadForm = document.getElementById("annotation-upload-form");
     if (uploadForm) {
@@ -47,8 +40,7 @@
             });
             dropzone.addEventListener("drop", function (event) {
                 if (event.dataTransfer && event.dataTransfer.files.length) {
-                    // Workflow allows one image at a time; if the user drops
-                    // several, keep the first only.
+                    // One image per upload: drop the rest if the user drags several.
                     var dt = new DataTransfer();
                     dt.items.add(event.dataTransfer.files[0]);
                     fileInput.files = dt.files;
@@ -62,11 +54,7 @@
     }
 
 
-    /* ====================================================================
-       LABEL MODE
-       ====================================================================
-       Wires the image viewer (zoom/pan/rotate/flip), the label cards
-       (click + keyboard 1-9), and Enter to submit when ready. */
+    /* ---- label mode ------------------------------------------------- */
 
     var frame = document.getElementById("image-viewer-frame");
     var image = document.getElementById("main-image");
@@ -77,8 +65,6 @@
         wireLabelCards(labelForm);
     }
 
-
-    /* -------------------------------------------------------------------- */
 
     function wireImageViewer(frameEl, imageEl) {
         var view = { zoom: 1, panX: 0, panY: 0, rotation: 0, flipX: 1, flipY: 1 };
@@ -105,26 +91,86 @@
             applyTransform();
         }, { passive: false });
 
-        var isDragging = false, dragStartX = 0, dragStartY = 0;
-        imageEl.addEventListener("mousedown", function (event) {
-            event.preventDefault();
-            isDragging = true;
-            dragStartX = event.clientX - view.panX;
-            dragStartY = event.clientY - view.panY;
+        // Pan + pinch-zoom via Pointer Events: one path for mouse, finger
+        // and stylus. The frame carries `touch-none` so the browser does
+        // not steal pinch / double-tap / pan gestures.
+        const activePointers = new Map(); // pointerId -> { x, y }
+        let panStartX = 0;
+        let panStartY = 0;
+        let pinchStartDistance = 0;
+        let pinchStartZoom = 1;
+
+        const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const pointerArray = () => Array.from(activePointers.values());
+
+        const beginPan = (event) => {
+            panStartX = event.clientX - view.panX;
+            panStartY = event.clientY - view.panY;
             imageEl.classList.add("is-dragging");
-        });
-        document.addEventListener("mousemove", function (event) {
-            if (!isDragging) return;
-            view.panX = event.clientX - dragStartX;
-            view.panY = event.clientY - dragStartY;
-            applyTransform();
-        });
-        document.addEventListener("mouseup", function () {
-            if (!isDragging) return;
-            isDragging = false;
+        };
+
+        const beginPinch = () => {
+            const [a, b] = pointerArray();
+            pinchStartDistance = distance(a, b) || 1;
+            pinchStartZoom = view.zoom;
             imageEl.classList.remove("is-dragging");
+        };
+
+        frameEl.addEventListener("pointerdown", (event) => {
+            // Keep right- and middle-click free for the browser.
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+
+            event.preventDefault();
+            // Pointer capture keeps move/up events flowing even when the
+            // finger drifts off the frame mid-drag.
+            frameEl.setPointerCapture(event.pointerId);
+            activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+            if (activePointers.size === 1) {
+                beginPan(event);
+            } else if (activePointers.size === 2) {
+                beginPinch();
+            }
         });
-        imageEl.addEventListener("dragstart", function (event) { event.preventDefault(); });
+
+        frameEl.addEventListener("pointermove", (event) => {
+            if (!activePointers.has(event.pointerId)) return;
+            activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+            if (activePointers.size === 1) {
+                view.panX = event.clientX - panStartX;
+                view.panY = event.clientY - panStartY;
+                applyTransform();
+            } else if (activePointers.size === 2) {
+                const [a, b] = pointerArray();
+                const ratio = distance(a, b) / pinchStartDistance;
+                view.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pinchStartZoom * ratio));
+                applyTransform();
+            }
+        });
+
+        const endPointer = (event) => {
+            if (!activePointers.has(event.pointerId)) return;
+            activePointers.delete(event.pointerId);
+
+            if (activePointers.size === 1) {
+                // 2 -> 1 finger: re-anchor pan on the remaining one to avoid a jump.
+                const [remaining] = pointerArray();
+                panStartX = remaining.x - view.panX;
+                panStartY = remaining.y - view.panY;
+                imageEl.classList.add("is-dragging");
+            } else if (activePointers.size === 0) {
+                imageEl.classList.remove("is-dragging");
+            }
+        };
+
+        // Don't listen to pointerleave: pointer capture keeps events
+        // flowing outside the frame, leave would kill the gesture early.
+        frameEl.addEventListener("pointerup", endPointer);
+        frameEl.addEventListener("pointercancel", endPointer);
+
+        // Kill the native HTML5 drag-ghost on slow mouse pans.
+        imageEl.addEventListener("dragstart", (event) => event.preventDefault());
 
         var bind = function (id, action) {
             var btn = document.getElementById(id);
@@ -171,8 +217,6 @@
         });
     }
 
-
-    /* -------------------------------------------------------------------- */
 
     function applyEnglishValidationToAll() {
         document.querySelectorAll("input[required], textarea[required]").forEach(function (input) {

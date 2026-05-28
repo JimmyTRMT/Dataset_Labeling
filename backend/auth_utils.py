@@ -1,8 +1,4 @@
-"""Shared auth helpers: decorators and small predicates.
-
-Lives outside `routes/` so any blueprint (or future module) can import
-without circular dependencies via `backend.routes.auth`.
-"""
+"""Shared auth helpers. Lives outside routes/ to dodge circular imports."""
 
 from functools import wraps
 
@@ -10,9 +6,8 @@ from flask import abort
 from flask_login import current_user, login_required
 
 
-# Like @login_required but also enforces role == "admin". Any other role
-# (or anonymous) gets a 403 - rendered as our branded errors/403 page.
 def admin_required(view):
+    """login_required + role == admin. Non-admins (and anon) get a 403."""
     @wraps(view)
     @login_required
     def wrapped(*args, **kwargs):

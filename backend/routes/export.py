@@ -21,19 +21,16 @@ from backend.services.export_service import (
 export_bp = Blueprint("export", __name__)
 
 
-# Same pattern as the annotation blueprint: gate every route behind
-# @login_required at the blueprint level so we cannot accidentally leave
-# an export endpoint public.
+# Blueprint-level login guard - same pattern as annotation_bp / dashboard_bp.
 @export_bp.before_request
 @login_required
 def _require_login():
     pass
 
 
-# Renders the export page with one card per project. Each card displays
-# the live image counts and the four download buttons (CSV / JSON / HTML).
 @export_bp.get("/export")
 def export_page():
+    """One card per project, live counts, CSV / JSON / HTML buttons."""
     project_ids = current_app.config["PROJECT_IDS"]
     counts: dict[str, dict[str, int]] = {}
     for project_id in project_ids:
@@ -51,9 +48,7 @@ def export_page():
     )
 
 
-# Reads the ?project= query param and returns it only if it matches one of
-# the configured project IDs. Returns None for missing or unknown values so
-# the caller can flash a clear message and redirect.
+# Returns the validated ?project= or None (so the caller can flash + redirect).
 def _resolve_project() -> str | None:
     project = request.args.get("project", "").strip()
     if project not in current_app.config["PROJECT_IDS"]:
@@ -61,8 +56,7 @@ def _resolve_project() -> str | None:
     return project
 
 
-# Common pre-flight: validate the project, fetch its labeled images, and
-# either return them or redirect with an explanatory flash.
+# Pre-flight shared by all three export formats.
 def _labeled_images_or_redirect():
     project = _resolve_project()
     if project is None:
@@ -81,9 +75,7 @@ def _labeled_images_or_redirect():
     return (project, labeled_images), None
 
 
-# Exports labeled images of one project as CSV. The file follows the
-# strict 26-column schema (img_path + 24 GLCM features + label) with a
-# semicolon delimiter so European spreadsheets open it directly.
+# CSV: 26 columns, `;` delimiter so European Excel opens it without a wizard.
 @export_bp.get("/export/csv")
 def export_csv():
     payload, redirect_response = _labeled_images_or_redirect()
@@ -106,8 +98,7 @@ def export_csv():
     return send_file(export_path, as_attachment=True)
 
 
-# Exports labeled images of one project as a single self-contained HTML
-# file: a 2-column table (image | label) with images embedded as base64.
+# HTML: one self-contained file, images base64-embedded, no companion folder.
 @export_bp.get("/export/html")
 def export_html():
     payload, redirect_response = _labeled_images_or_redirect()
@@ -130,8 +121,7 @@ def export_html():
     return send_file(export_path, as_attachment=True)
 
 
-# Exports labeled images of one project as JSON. Each entry is a flat dict
-# with the same 26 keys as the CSV (img_path, con1..corr4, asm1..asm4, label).
+# JSON: flat array of dicts, same 26 keys as the CSV, numbers (not strings).
 @export_bp.get("/export/json")
 def export_json():
     payload, redirect_response = _labeled_images_or_redirect()

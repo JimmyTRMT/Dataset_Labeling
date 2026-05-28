@@ -1,9 +1,8 @@
-// Auth pages: client-side helpers only. Real validation is done by
-// WTForms server-side; this file just gives the user instant feedback.
+// Auth pages: client-side hints only. WTForms does the real validation.
 
 (function () {
 
-    /* ---------- password confirmation live check -------------------- */
+    /* ---- live password-match check ---------------------------------- */
 
     function bindPasswordMatch(passwordId, confirmId, hintId) {
         var pw = document.getElementById(passwordId);
@@ -34,13 +33,12 @@
         pwConfirm.addEventListener("input", check);
     }
 
-    // The forms use the standard WTForms field id pattern ("password",
-    // "password_confirm", etc.). bind only the pair that exists.
+    // Bind whichever pair is present (register vs reset use different ids).
     bindPasswordMatch("password", "password_confirm", "password-match-hint");
     bindPasswordMatch("new_password", "new_password_confirm", "password-match-hint");
 
 
-    /* ---------- English validation messages for all required inputs - */
+    /* ---- English validation messages for required inputs ------------ */
 
     document.querySelectorAll("input[required], textarea[required]").forEach(function (input) {
         var fillMessage = "Please fill in this field.";
@@ -50,8 +48,8 @@
             }
         });
         input.addEventListener("input", function () {
-            // Only clear if the field has actual content - leave the
-            // password-match hint alone otherwise.
+            // Only clear once the field is non-empty, else we wipe the
+            // password-match hint set by bindPasswordMatch above.
             if (input.value && input.validity.valid) {
                 input.setCustomValidity("");
             }

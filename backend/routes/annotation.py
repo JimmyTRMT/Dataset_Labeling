@@ -22,20 +22,16 @@ from backend.services.image_service import (
 annotation_bp = Blueprint("annotation", __name__)
 
 
-# Every route below requires an authenticated user. Registering the
-# decorator at the blueprint level (via before_request) keeps the route
-# bodies clean and guarantees we never accidentally leave one public.
+# Blueprint-level login guard - can't leave an endpoint public by accident.
 @annotation_bp.before_request
 @login_required
 def _require_login():
     pass
 
 
-# The annotation page has two states:
-#   1. Upload form  - when no pending image is waiting,
-#   2. Labeling UI  - when at least one image is uploaded but unlabeled.
-# We pick the right state on every GET so the workflow flows naturally:
-# upload -> label -> upload next -> label -> ...
+# Dual-mode page: upload form when no pending image, labeling viewer when one
+# is waiting. State is picked on each GET so the loop flows naturally:
+#   upload -> label -> upload -> label -> ...
 @annotation_bp.get("/annotation")
 def annotation_page():
     pending_image = (
@@ -60,11 +56,9 @@ def annotation_page():
     )
 
 
-# Stage 1 - upload only. Validates project + image + description (the
-# label is picked at stage 2) and stages the file in _pending/. The
-# author field on the form is read-only client-side; we ignore whatever
-# the request sends and always use current_user.username server-side so
-# a tampered POST cannot impersonate someone else.
+# Stage 1: stage the file in _pending/. Label comes at stage 2.
+# Author is ALWAYS current_user.username server-side - the form value is
+# ignored, so a tampered POST cannot impersonate someone else.
 @annotation_bp.post("/annotation/upload")
 def submit_upload():
     project = request.form.get("project", "").strip()
@@ -112,8 +106,7 @@ def submit_upload():
     return redirect(url_for("annotation.annotation_page"))
 
 
-# Stage 2 - apply a label to a pending image and finalize it. Moves the
-# file from _pending/ to its label folder and flips status to "labeled".
+# Stage 2: move the file from _pending/ to its label folder, flip to labeled.
 @annotation_bp.post("/annotation/<int:image_id>/label")
 def submit_label(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
@@ -143,7 +136,7 @@ def submit_label(image_id: int):
     return redirect(url_for("annotation.annotation_page"))
 
 
-# Removes a pending or finalized image. Disk cleanup first, then DB row.
+# Drops pending or finalized image. Disk first, then DB row.
 @annotation_bp.post("/annotation/<int:image_id>/delete")
 def delete_annotation(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
@@ -158,22 +151,19 @@ def delete_annotation(image_id: int):
         return redirect(url_for("annotation.dataset_browser"))
 
     flash("Image deleted.", "success")
-    # Send the user back to wherever they came from: the dataset table for
-    # finalized rows, the annotation page for pending rows.
+    # Pending -> annotation page, labeled -> dataset browser.
     target = "annotation.dataset_browser" if image.status == "labeled" else "annotation.annotation_page"
     return redirect(url_for(target))
 
 
-# Dataset browser is now project-scoped. The default URL redirects to the
-# first project so the nav link in base.html stays simple, while each
-# project gets its own page accessible via tabs.
+# /dataset just redirects to the first project so the navbar link can stay
+# generic. Each project has its own page; the template renders tabs.
 @annotation_bp.get("/dataset")
 def dataset_browser():
     default_project = current_app.config["PROJECT_IDS"][0]
     return redirect(url_for("annotation.dataset_for_project", project_id=default_project))
 
 
-# One page per project. The template renders tabs to switch between them.
 @annotation_bp.get("/dataset/<project_id>")
 def dataset_for_project(project_id: str):
     project_ids = current_app.config["PROJECT_IDS"]
@@ -195,8 +185,7 @@ def dataset_for_project(project_id: str):
     )
 
 
-# Serves a stored image. send_from_directory uses safe_join, which blocks
-# path traversal attempts (e.g. ../../etc/passwd).
+# send_from_directory uses safe_join - blocks ../../etc/passwd traversal.
 @annotation_bp.get("/images/<path:filename>")
 def serve_image(filename: str):
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)

@@ -1,5 +1,4 @@
-// Admin user-management interactions: confirm before deleting a user
-// account so an accidental click never wipes someone out silently.
+// Confirm before deleting a user account.
 
 (function () {
     document.querySelectorAll(".admin-delete-form").forEach(function (form) {

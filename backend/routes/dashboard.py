@@ -8,20 +8,21 @@ from backend.models.database import ImageRecord, db
 dashboard_bp = Blueprint("dashboard", __name__)
 
 
-# Same blueprint-level guard as annotation/export: every endpoint here is
-# behind @login_required.
+# Blueprint-level login guard - same pattern as annotation_bp / export_bp.
 @dashboard_bp.before_request
 @login_required
 def _require_login():
     pass
 
 
-# Analytics view for one dataset.
 @dashboard_bp.get("/dashboard/<dataset_type>")
 def dataset_dashboard(dataset_type: str):
+    """Live label distribution for one project."""
     if dataset_type not in current_app.config["PROJECT_IDS"]:
         abort(404)
 
+    # GROUP BY in SQL - never hardcode labels here. Any label present in
+    # the data shows up; removed labels drop out on their own.
     rows = (
         db.session.query(ImageRecord.label, func.count(ImageRecord.id))
         .filter(ImageRecord.project == dataset_type)

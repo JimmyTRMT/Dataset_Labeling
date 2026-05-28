@@ -1,11 +1,6 @@
-// Renders the dataset dashboard doughnut chart with Chart.js.
-//
-// Data flows in via two safe channels rendered server-side:
-//   - <script id="chart-data" type="application/json">[{label, count}, ...]</script>
-//   - <canvas id="datasetChart" data-dataset-type="...">
-//
-// Colors come from a fixed soft palette; the chart re-renders when the
-// user toggles Light/Dark so axis/legend text stays readable on both.
+// Analytics dashboard: doughnut chart of label counts via Chart.js.
+// Reads its data from #chart-data (JSON) and #datasetChart (canvas),
+// both rendered server-side. Re-renders on Light/Dark toggle.
 
 (function () {
     var canvas = document.getElementById("datasetChart");
@@ -22,18 +17,10 @@
 
     var datasetType = canvas.getAttribute("data-dataset-type") || "";
 
-    // Soft, professional palette. Hand-picked so adjacent slices read well
-    // and the set is colour-blind friendly. Cycles when there are more
-    // labels than colours - acceptable since each project has <= 5 labels.
+    // Colour-blind friendly palette. Cycles past 8 labels (no project hits that).
     var PALETTE = [
-        "#60a5fa", // blue-400
-        "#34d399", // emerald-400
-        "#fbbf24", // amber-400
-        "#f87171", // red-400
-        "#a78bfa", // violet-400
-        "#22d3ee", // cyan-400
-        "#fb923c", // orange-400
-        "#f472b6"  // pink-400
+        "#60a5fa", "#34d399", "#fbbf24", "#f87171",
+        "#a78bfa", "#22d3ee", "#fb923c", "#f472b6"
     ];
 
     function paletteAt(index) {
@@ -44,8 +31,7 @@
     var counts = rawData.map(function (item) { return item.count; });
     var colors = rawData.map(function (_item, idx) { return paletteAt(idx); });
 
-    // Mirror the dot colours in the left-hand list so the legend matches
-    // the chart exactly. Falls back silently if the list isn't rendered.
+    // Sync the left-hand list dots with the chart palette.
     document.querySelectorAll("[data-legend-dot]").forEach(function (dot) {
         var idx = parseInt(dot.getAttribute("data-index"), 10);
         if (!isNaN(idx)) {
@@ -57,8 +43,6 @@
         return document.documentElement.classList.contains("dark");
     }
 
-    // Theme-aware text/border colours. Chart.js reads these once per
-    // render, so a re-render is needed on theme switch (see below).
     function themeTokens() {
         return isDark()
             ? { text: "#e2e8f0", border: "#1e293b", tooltipBg: "#0f172a" }
@@ -83,6 +67,8 @@
             },
             options: {
                 responsive: true,
+                // false is required, the parent <div> sets a fixed height.
+                // Without it Chart.js grows the canvas unbounded.
                 maintainAspectRatio: false,
                 cutout: "62%",
                 animation: { duration: 600 },
@@ -127,9 +113,8 @@
 
     var chart = new window.Chart(canvas.getContext("2d"), buildConfig());
 
-    // Re-render on theme toggle so legend/title text contrasts correctly.
-    // We watch the `class` attribute on <html> rather than listening on
-    // the button so we still react if the theme is changed programmatically.
+    // Watch <html> class instead of the toggle button so programmatic
+    // theme changes (or theme.js bootstrap) also trigger a re-render.
     var observer = new MutationObserver(function () {
         var tokens = themeTokens();
         chart.options.plugins.legend.labels.color = tokens.text;

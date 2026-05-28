@@ -1,12 +1,10 @@
 # Dataset Labeling Platform
 
-A small Flask web application that lets a research team upload medical or
-waste images, label them for AI training, and export the labeled dataset
-together with **pre-computed GLCM texture features**, ready to drop into
-any machine-learning pipeline.
+A Flask web application for a research team to upload images, label them
+for AI training, and export the result with **pre-computed GLCM texture
+features**. Drop the exports straight into any machine-learning pipeline.
 
-The tool handles **two distinct research projects** in one UI, with strict
-data separation:
+Two research projects share the same UI, with strict data separation:
 
 | Project        | Use case             | Labels                                                              |
 |----------------|----------------------|---------------------------------------------------------------------|
@@ -15,51 +13,57 @@ data separation:
 
 ---
 
-## Feature list
+## Features
 
-1. **Authentication** &mdash; register / login / logout, "forgot password"
-   recovery via security question, role-based access (`admin` /
-   `annotator`), every business route guarded by `@login_required`.
-2. **Admin panel** &mdash; promote, demote and delete users. The first
-   registered user becomes admin automatically; a CLI fallback exists for
-   recovery. A seed script (`create_admin.py`) makes a known admin
-   account available for repeatable setups.
-3. **Annotation workflow** in two clean steps:
-   - **Step 1 (upload)** &mdash; pick a project, drop one image (single file
-     only), enter author + description, save.
-   - **Step 2 (label)** &mdash; the image opens in an interactive viewer
-     (mouse-wheel zoom, click-and-drag pan, rotate / flip / reset). Pick
-     one label from large cards (or press `1`-`9`) and save.
-4. **Storage layout** &mdash; files are renamed automatically to
-   `Fundus_001.jpg`, `Fundus_002.jpg`, ... or `Waste_001.jpg`, ... and
-   moved into the label folder on save (`data/images/Severity_0/`,
-   `data/images/PET/`, etc.).
-5. **Dataset browser** &mdash; two tabs (Fundus Dataset / WasteSorting
-   Dataset). Each tab shows a table with thumbnail, filename, label,
-   **description**, author and upload date. Per-tab text search and
-   pagination (10 / 25 / 50 / 100 rows).
-6. **Per-project analytics dashboard** &mdash; each project card on the
-   home page links to `/dashboard/<project>`, a live view that combines
-   a typed label breakdown (counts + percentages) on the left and a
-   Chart.js doughnut chart on the right. Labels and counts are pulled
-   straight from SQL (`GROUP BY label`), so the chart always reflects
-   the current state of the database &mdash; no hardcoded lists, no
-   manual refresh. Colours adapt to Light / Dark mode without a page
-   reload.
-7. **Exports** &mdash; one card per project, three formats:
-   - **CSV** &mdash; 26 columns, semicolon-separated, opens directly in
-     European Excel (FR / IT / ES locales) and pandas.
-   - **JSON** &mdash; same 26 keys, flat structure, ready for any ML
-     library.
-   - **HTML** &mdash; single self-contained file showing each image next
-     to its label.
-   - CSV and JSON automatically compute and embed **6 GLCM texture
-     features** (`contrast, dissimilarity, homogeneity, energy,
-     correlation, asm`) for every image, expanded into 24 separate
-     columns (4 directions each).
-8. **Theme** &mdash; modern UI (Tailwind CSS) with an instant Light /
-   Dark toggle, persisted in `localStorage`. Annotation viewer uses CSS
-   transforms (no third-party library).
+1. **Secure authentication** &mdash; Flask-Login sessions with
+   PBKDF2-SHA256 password hashing (Werkzeug, 1M iterations). Username +
+   password, plus a self-service recovery flow built on a user-chosen
+   security question (no email, no SMTP). Two roles, `admin` and
+   `annotator`. Every business route is gated by `@login_required` at
+   the blueprint level, so no endpoint can accidentally stay public.
+2. **Admin panel** &mdash; promote, demote, delete accounts. First
+   registered user is auto-promoted to admin so the app is usable out of
+   the box; a CLI command and a one-shot `create_admin.py` script cover
+   the lockout cases. Self-protection: the last admin cannot demote or
+   delete themselves.
+3. **Two-step annotation** &mdash; (1) pick a project, drop one image,
+   add author + description; (2) inspect the image in an interactive
+   viewer (mouse-wheel zoom, click-and-drag pan, rotate, flip, reset)
+   and pick a label from large cards (or hit `1`-`9` on the keyboard).
+4. **Touch-ready image viewer** &mdash; the same viewer works at the
+   finger on tablet and phone via the Pointer Events API: one finger
+   pans, two fingers pinch-zoom. `touch-action: none` on the frame
+   keeps the browser from stealing the gesture.
+5. **Deterministic storage** &mdash; uploads are renamed sequentially
+   (`Fundus_001.jpg`, `Waste_042.jpg`) and moved into their label
+   folder on save (`data/images/Severity_0/`, `data/images/PET/`).
+   Project-prefixed names mean no cross-project collisions, ever.
+6. **Dataset browser** &mdash; one tab per project, per-tab text search
+   and pagination (10 / 25 / 50 / 100), thumbnail + filename + label +
+   description + author + upload date. Confirm before delete.
+7. **Live analytics dashboard** &mdash; each project card on the home
+   page opens `/dashboard/<project>`. A doughnut chart (Chart.js) sits
+   next to a typed label breakdown with counts and percentages. Labels
+   are queried in SQL via `GROUP BY` &mdash; **never hardcoded** &mdash;
+   so the view always reflects the current database. Chart colours
+   re-render on Light / Dark toggle without a page reload.
+8. **Exports** &mdash; one card per project, three formats:
+   - **CSV** &mdash; 26 columns, `;` delimiter, UTF-8 with BOM. Opens
+     straight in European Excel (FR / IT / ES) and pandas.
+   - **JSON** &mdash; same 26 keys, flat structure, numeric values.
+   - **HTML** &mdash; self-contained preview (image + label per row),
+     images base64-embedded, works offline.
+   - CSV and JSON ship the 6 GLCM features (`contrast`, `dissimilarity`,
+     `homogeneity`, `energy`, `correlation`, `asm`) at 4 angles each.
+     The pipeline is **fail-soft**: a corrupt image yields zero-filled
+     features and a log line, never a 500.
+9. **Mobile-first responsive UI** &mdash; Tailwind utilities drive
+   every breakpoint. The navbar collapses into a hamburger below `md`,
+   the annotation viewer stacks under the controls on small screens,
+   the analytics grid folds from 2-column to 1-column, tables overflow
+   horizontally instead of breaking the page width.
+10. **Light / Dark theme** &mdash; instant toggle persisted in
+    `localStorage`, applied pre-paint to avoid FOUC.
 
 ---
 
@@ -278,30 +282,27 @@ fixes the exact values. `MAX_CONTENT_LENGTH` is hardcoded to 16 MB. Edit
 
 ## Security
 
-- **Password storage** &mdash; PBKDF2-SHA256 via
-  `werkzeug.security.generate_password_hash`. Security answers are
-  hashed too.
-- **CSRF protection** &mdash; every POST form via Flask-WTF.
-- **Path traversal blocked** by `send_from_directory` (Werkzeug
-  `safe_join`).
-- **File extension whitelist** on uploads (PNG, JPG, JPEG, BMP, GIF,
-  TIF, TIFF, WEBP).
-- **Stored filenames** are deterministic (`<Prefix>_NNN.<ext>`) and
-  live inside their label folder; the project's filename prefix
-  prevents cross-project collisions.
-- **Robust try/except + rollback** around every DB commit; GLCM
-  extraction degrades to zero-filled features on missing/corrupt files
-  and logs the path.
-- **Fail-fast** &mdash; the app refuses to boot in production if
-  `SECRET_KEY` is the default.
-- **Author tampering blocked** &mdash; the annotation form's `author`
-  input is read-only client-side, and the server ignores it anyway,
-  always using `current_user.username`.
-- **CSRF-safe logout** &mdash; logout is POST-only with a token, so a
-  drive-by link cannot kick a user out.
-- **Admin self-protection** &mdash; an admin cannot demote themselves
-  if they would leave the system without any admin, and cannot delete
-  their own account from the UI.
+- **Password and security-answer hashing** &mdash; PBKDF2-SHA256 via
+  `werkzeug.security.generate_password_hash` (1M iterations by default).
+- **CSRF on every POST** via Flask-WTF, including logout.
+- **Anti-enumeration** on `/login` and `/forgot`: identical wording and
+  timing whether the username exists or not.
+- **Open-redirect guard** on `?next=`: only internal paths are followed.
+- **Path-traversal safe** image serving via `send_from_directory`.
+- **Extension whitelist** on uploads (PNG, JPG, JPEG, BMP, GIF, TIF,
+  TIFF, WEBP). 16 MB hard cap (`MAX_CONTENT_LENGTH`).
+- **Deterministic filenames** (`<Prefix>_NNN.<ext>`) with per-project
+  prefixes: no cross-project name collisions.
+- **Author tampering ignored** &mdash; the server always uses
+  `current_user.username`, never the form value.
+- **Try/except + rollback** around every `db.session.commit()`; no
+  business endpoint can crash on a transient DB error.
+- **Fail-soft GLCM** &mdash; a missing or corrupt image yields
+  zero-filled features and a log line, never aborts the export.
+- **Fail-fast boot** &mdash; the app refuses to start in production if
+  `SECRET_KEY` is left at the default.
+- **Admin self-protection** &mdash; the last admin cannot demote or
+  delete themselves; no self-delete from the panel.
 - **`.env`** is gitignored; only `.env.example` is tracked.
 
 ---

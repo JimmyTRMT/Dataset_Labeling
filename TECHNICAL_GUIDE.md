@@ -25,7 +25,7 @@ script, day-to-day maintenance and common troubleshooting.
 9. [Exports and GLCM texture features](#9-exports-and-glcm-texture-features)
 10. [Theme system (Light / Dark)](#10-theme-system-light--dark)
 11. [Maintenance](#11-maintenance)
-12. [Testing](#12-Testing)
+12. [Testing](#12-testing)
 13. [Troubleshooting](#13-troubleshooting)
 14. [Extending the application](#14-extending-the-application)
 15. [Appendix &mdash; file map](#15-appendix--file-map)
@@ -306,6 +306,44 @@ ModifV1_0_1_Correction/
 > `@blueprint.before_request @login_required` (or `@admin_required` for
 > `admin_bp`), so it can never be accidentally forgotten on a single
 > endpoint.
+
+### Five Flask blueprints, one shape
+
+Every business area is a blueprint registered in `create_app()`. The
+shape is identical from one file to the next, so each one stays small
+and reads predictably:
+
+- a module-level `Blueprint(...)` instance,
+- a `@before_request @login_required` (or `@admin_required`) hook,
+- route handlers, one per endpoint, with `try/except + rollback`
+  around every `db.session.commit()`,
+- private helpers prefixed with `_`.
+
+| Blueprint        | File                                | Surface                                        |
+|------------------|-------------------------------------|------------------------------------------------|
+| `auth_bp`        | `backend/routes/auth.py`            | Public auth pages + POST `/logout`             |
+| `annotation_bp`  | `backend/routes/annotation.py`      | 2-step annotation + image serving + browser    |
+| `dashboard_bp`   | `backend/routes/dashboard.py`       | `/dashboard/<dataset_type>` analytics          |
+| `export_bp`      | `backend/routes/export.py`          | Export page + CSV / JSON / HTML downloads      |
+| `admin_bp`       | `backend/routes/admin.py`           | User management                                |
+
+### Frontend layering
+
+The frontend has zero build step. Tailwind CDN drives styling,
+Chart.js CDN drives the analytics doughnut (loaded only on that page).
+JavaScript is **strictly separated from templates**:
+
+- `frontend/templates/` holds Jinja templates and **no JS logic**. The
+  only inline script kept in `base.html` is the four-line theme
+  bootstrap (it has to run before paint to avoid FOUC).
+- `frontend/static/js/` holds one focused file per concern: `theme.js`,
+  `toasts.js`, `main.js` (mobile nav), `annotation.js`, `dataset.js`,
+  `dashboard.js`, `auth.js`, `admin.js`. Each file is an IIFE and
+  bails out cleanly when its DOM hooks are absent, so the same script
+  bundle can ship on every page.
+- Data hand-offs from Flask to JS go through `data-*` attributes or
+  through a typed-content tag (`<script id="..." type="application/json">{{ payload | tojson }}</script>`),
+  never through string concatenation - XSS-safe by construction.
 
 ---
 
@@ -805,17 +843,25 @@ left, label badge right. Images are embedded as `data:image/...;base64`
 URLs so no companion folder is needed. The file ships with its own
 inline styles (independent of Tailwind) so it works offline.
 
-### Robustness in `export_service.py`
+### Fail-soft GLCM pipeline
+
+Exports cannot 500. One corrupt file out of a thousand still has to
+ship a valid 26-column row, or the researchers lose the whole batch.
+The pipeline enforces this at two layers:
 
 - `extract_glcm_features()` returns zero-filled features and **logs**
   the path when:
   - the file is missing,
-  - OpenCV cannot read it (`cv2.error` or `OSError`),
+  - OpenCV cannot read it (`cv2.error` / `OSError`),
   - OpenCV returns `None` (unknown format),
   - `graycomatrix` / `graycoprops` raise (constant image, bad shape).
-- `_build_export_row()` wraps the GLCM call in a broad `try/except` so
-  even an unexpected failure on one image only zeros out **that** row
-  &mdash; the rest of the export still completes.
+- `_build_export_row()` wraps the GLCM call in a broad `try/except`,
+  so even an unexpected failure on one image only zeros out **that**
+  row &mdash; the rest of the export still completes. The exception is
+  logged via `logger.exception`, with image id, for post-mortem.
+
+Combined with the per-commit `try/except + db.session.rollback()` on
+every business route, no end-user action can crash the server.
 
 ---
 
@@ -825,8 +871,7 @@ inline styles (independent of Tailwind) so it works offline.
 
 - `<html>` carries a `dark` class when dark mode is active.
 - An inline `<script>` in `base.html` reads `localStorage["theme"]` and
-  applies the class **before paint**, so the page never flashes the
-  wrong colour on first load.
+  applies the class **before paint** to avoid FOUC.
 - `tailwind.config = { darkMode: "class" }` &mdash; Tailwind picks up
   `dark:` utility variants based on the class.
 - A toggle button in the navbar swaps the class and writes the new
@@ -840,8 +885,39 @@ Use Tailwind utility pairs:
 <div class="bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"> ... </div>
 ```
 
-The application's accent colour is `blue-600` (with `blue-500` hover
-and `blue-400` for dark-mode text).
+Accent colour: `blue-600` (`blue-500` hover, `blue-400` dark-mode text).
+
+### Responsive design
+
+The UI is mobile-first via Tailwind utilities. Mobile is the default;
+breakpoints (`sm`, `md`, `lg`, `xl`) layer on the desktop experience.
+The strategy boils down to four rules applied consistently:
+
+1. **Navbar collapses below `md`.** The text links carry
+   `hidden md:flex`, and a hamburger button (`md:hidden`) reveals a
+   dropdown panel. Logic in `frontend/static/js/main.js` &mdash; auto-closes
+   on viewport resize and on link tap. No JS in the template.
+2. **Multi-column grids fold to one column.** Analytics
+   (`grid-cols-1 lg:grid-cols-5`) and annotation
+   (`grid-cols-1 lg:grid-cols-10`) both stack vertically on small
+   screens with no extra markup.
+3. **Tables get a horizontal scroll wrapper.** Every `<table>` lives
+   inside a `<div class="overflow-x-auto">` so the table can scroll
+   sideways without breaking the page width on mobile (which would
+   otherwise overflow the navbar and the sticky elements).
+4. **Image viewer goes touch-native.** The frame carries
+   `h-[50vh] lg:h-[640px] touch-none`. The `touch-none`
+   (CSS `touch-action: none`) cedes pinch/pan/double-tap to JS instead
+   of the browser. `annotation.js` then drives pan and pinch-zoom via
+   the Pointer Events API &mdash; one code path covers mouse, finger
+   and stylus, with `setPointerCapture` keeping drags alive even when
+   the finger drifts off the frame.
+
+The annotation right-hand column also uses `flex flex-col` plus
+`lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto`, so on short laptop
+screens the labels scroll inside the panel instead of pushing the
+Save / Cancel buttons off-screen. The action group is pinned to the
+bottom via `mt-auto`.
 
 ---
 

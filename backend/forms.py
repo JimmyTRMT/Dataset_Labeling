@@ -1,8 +1,4 @@
-"""WTForms classes used by the auth blueprint.
-
-Kept in one module because the four forms share validators and live close
-to each other in the request lifecycle (login, register, forgot, reset).
-"""
+"""WTForms used by the auth blueprint (login / register / forgot / reset)."""
 
 from flask_wtf import FlaskForm
 from wtforms import PasswordField, StringField, SubmitField
@@ -11,8 +7,7 @@ from wtforms.validators import DataRequired, EqualTo, Length, Regexp, Validation
 from backend.models.database import User
 
 
-# Username rule: 3-80 characters, letters / digits / underscore / dash
-# only. Keeps URLs and filenames predictable, avoids whitespace bugs.
+# Letters / digits / underscore / dash only. Predictable URLs and filenames.
 USERNAME_PATTERN = r"^[A-Za-z0-9_\-]+$"
 USERNAME_PATTERN_MESSAGE = "Username may contain letters, digits, underscore or dash only."
 
@@ -20,7 +15,6 @@ PASSWORD_MIN = 8
 PASSWORD_MAX = 128
 
 
-# Reusable validator that fails if the username is already taken.
 def _username_must_be_unique(form, field):
     if User.query.filter_by(username=field.data).first() is not None:
         raise ValidationError("Username already taken.")
@@ -75,7 +69,8 @@ class RegisterForm(FlaskForm):
 
 
 class ForgotPasswordForm(FlaskForm):
-    """Step 1 of password recovery: identify the account by username."""
+    """Recovery step 1: identify the account by username."""
+
     username = StringField(
         "Username",
         validators=[DataRequired(), Length(min=3, max=80)],
@@ -84,8 +79,8 @@ class ForgotPasswordForm(FlaskForm):
 
 
 class ResetPasswordForm(FlaskForm):
-    """Step 2 of password recovery: prove identity via security answer
-    and set a new password."""
+    """Recovery step 2: answer the security question, set a new password."""
+
     security_answer = StringField(
         "Your answer",
         validators=[DataRequired(), Length(min=1, max=255)],

@@ -1,8 +1,6 @@
-/* Custom styles that sit on top of Tailwind utility classes. Tailwind
-   handles most of the styling; this file only covers what utilities
-   cannot express cleanly. */
+/* Tailwind handles most styling. This file covers what utilities can't. */
 
-/* Smooth colour transitions when the user flips Light <-> Dark. */
+/* Smooth Light <-> Dark transitions. */
 html,
 html body,
 nav,
@@ -12,23 +10,17 @@ table {
     transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
 }
 
-/* Hide the bare value of `<input type="file">`; the dropzone is the
-   visible affordance instead. */
+/* Dropzone is the visible affordance; raw file input stays hidden. */
 input[type="file"].hidden {
     display: none;
 }
 
-/* Image viewer (labeling step) ------------------------------------- */
+/* ---- image viewer ------------------------------------------------- */
 
-/* Fixed-height frame around the image. The element is `position: relative`
-   so the image inside can be absolutely centered with translate(-50%, -50%). */
-.image-viewer-frame {
-    height: 640px;
-}
+/* Frame height is set via Tailwind on the template (h-[50vh] lg:h-[640px]).
+   position:relative comes from the `relative` utility there. */
 
-/* The image lives directly inside the frame and is centered via
-   absolute positioning. annotation.js layers pan / zoom / rotate / flip
-   on top via CSS transforms. */
+/* Image is absolutely centered; annotation.js layers transforms on top. */
 .image-canvas {
     position: absolute;
     top: 50%;
@@ -39,8 +31,8 @@ input[type="file"].hidden {
     cursor: grab;
     -webkit-user-select: none;
     user-select: none;
-    /* Native HTML5 drag is also prevented in JS, but this stops Firefox
-       from kicking off a drag preview during a pan gesture. */
+    /* Belt-and-braces: JS preventDefaults the dragstart too, but this
+       stops Firefox from kicking off a drag preview during a pan. */
     -webkit-user-drag: none;
 }
 

@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Dataset Labeling Platform{% endblock %}</title>
 
-    {# Apply the saved theme BEFORE Tailwind paints, so the page never
-       flashes the wrong colours on first load. #}
+    {# Apply theme pre-paint to avoid FOUC. Only inline script we keep. #}
     <script>
         (function () {
             try {
@@ -14,7 +13,7 @@
                 if (saved !== "light") {
                     document.documentElement.classList.add("dark");
                 }
-            } catch (e) { /* localStorage disabled - default to dark */ }
+            } catch (e) { /* private mode: default to dark */ }
         })();
     </script>
 
@@ -27,7 +26,7 @@
 </head>
 <body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 min-h-screen antialiased transition-colors">
 
-{# Sticky nav, present on every page. #}
+{# Sticky nav on every page. #}
 <nav class="bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700 sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-14">
@@ -37,9 +36,8 @@
             </a>
 
             <div class="flex items-center gap-3">
-                {# Main nav is only meaningful for authenticated users.
-                   The Admin link is appended only when the current user
-                   is an admin, so non-admins never see it. #}
+                {# Nav is only for signed-in users. Admin link is appended
+                   for admins only. Collapses into a hamburger below md. #}
                 {% if current_user.is_authenticated %}
                     {% set nav_links = [
                         ('home',       url_for('home'),                          'Home'),
@@ -50,7 +48,7 @@
                     {% if current_user.is_admin %}
                         {% set nav_links = nav_links + [('admin', url_for('admin.users_list'), 'Admin')] %}
                     {% endif %}
-                    <div class="flex items-center gap-1 text-sm">
+                    <div class="hidden md:flex items-center gap-1 text-sm">
                         {% for page_id, href, caption in nav_links %}
                             <a href="{{ href }}"
                                class="px-3 py-1.5 rounded-md transition-colors
@@ -66,7 +64,26 @@
                     </div>
                 {% endif %}
 
-                {# Theme toggle: visible whether or not a user is logged in. #}
+                {# Hamburger: < md, signed-in only. main.js toggles aria-expanded. #}
+                {% if current_user.is_authenticated %}
+                    <button id="mobile-nav-toggle" type="button"
+                            class="md:hidden p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            aria-label="Toggle navigation menu"
+                            aria-controls="mobile-nav-panel"
+                            aria-expanded="false">
+                        <svg id="mobile-nav-icon-open" class="w-5 h-5 block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                        <svg id="mobile-nav-icon-close" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                            <line x1="6" y1="18" x2="18" y2="6"></line>
+                        </svg>
+                    </button>
+                {% endif %}
+
+                {# Theme toggle: visible to everyone, signed in or not. #}
                 <button id="theme-toggle" type="button"
                         class="ml-1 p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                         aria-label="Toggle theme">
@@ -79,9 +96,7 @@
                     </svg>
                 </button>
 
-                {# Identity block: username + logout when signed in, link
-                   to /login when anonymous. POST-only logout so a stray
-                   GET cannot kick the user out. #}
+                {# Identity: username + POST-only logout, or sign-in link. #}
                 {% if current_user.is_authenticated %}
                     <div class="flex items-center gap-2 ml-1 pl-3 border-l border-slate-200 dark:border-slate-700">
                         <span class="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">
@@ -105,10 +120,29 @@
                 {% endif %}
             </div>
         </div>
+
+        {# Mobile dropdown: < md only, signed-in only. main.js toggles `hidden`. #}
+        {% if current_user.is_authenticated %}
+            <div id="mobile-nav-panel"
+                 class="hidden md:hidden border-t border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-3 space-y-1 text-sm">
+                {% for page_id, href, caption in nav_links %}
+                    <a href="{{ href }}"
+                       class="block px-3 py-2 rounded-md transition-colors
+                              {% if active_page == page_id %}
+                                  bg-blue-600 text-white
+                              {% else %}
+                                  text-slate-700 hover:bg-slate-200 hover:text-slate-900
+                                  dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        {{ caption }}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
     </div>
 </nav>
 
-{# Floating toasts. Auto-dismiss after 3 seconds. #}
+{# Floating toasts. Auto-dismiss after 3s (handled by toasts.js). #}
 {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
         <div id="toast-stack" class="fixed top-20 right-4 z-50 space-y-2 max-w-sm">
@@ -133,6 +167,7 @@
 
 <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 <script src="{{ url_for('static', filename='js/toasts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -4,8 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# load_dotenv must run before backend.config is imported, since Config
-# reads os.getenv() at class-definition time.
+# Must run before backend.config: Config reads os.getenv() at import time.
 load_dotenv()
 
 from flask import Flask, flash, redirect, render_template, url_for
@@ -25,13 +24,11 @@ from backend.routes.export import export_bp
 
 csrf = CSRFProtect()
 login_manager = LoginManager()
-# Public endpoint that unauthenticated users are redirected to.
 login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to continue."
 login_manager.login_message_category = "warning"
 
 
-# Flask-Login loads the current user from the session via this callback.
 @login_manager.user_loader
 def load_user(user_id: str) -> User | None:
     try:
@@ -40,9 +37,8 @@ def load_user(user_id: str) -> User | None:
         return None
 
 
-# Renders a naive UTC datetime (the way SQLAlchemy returns DB columns) as
-# a string in Thai local time. Templates use it via `{{ dt | local_time }}`.
 def local_time(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Render a naive-UTC datetime in Thai time. Used as Jinja filter."""
     if value is None:
         return ""
     if value.tzinfo is None:
@@ -50,10 +46,8 @@ def local_time(value: datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
     return value.astimezone(DISPLAY_TIMEZONE).strftime(fmt)
 
 
-# Application factory. Builds the Flask app, wires the database and auth,
-# runs the SQLite migration, registers blueprints + filters, and refuses
-# to start in production with the default secret key.
 def create_app() -> Flask:
+    """Application factory. Wires DB, auth, migrations, blueprints, CLI."""
     project_root = Config.PROJECT_ROOT
     flask_app = Flask(
         __name__,
@@ -97,8 +91,7 @@ def create_app() -> Flask:
     return flask_app
 
 
-# Home + utility routes that don't deserve their own blueprint. Home is
-# behind @login_required so an anonymous visitor is bounced to /login.
+# Routes too small to warrant a blueprint. Home stays login-gated.
 def register_core_routes(flask_app: Flask) -> None:
     @flask_app.get("/")
     @login_required
@@ -115,9 +108,8 @@ def register_core_routes(flask_app: Flask) -> None:
         )
 
 
-# Adds new columns and migrates renamed values on legacy SQLite databases.
-# New deployments are no-ops. Wrapped in try/except so a partially upgraded
-# DB does not block the app; failures are logged for manual inspection.
+# Legacy SQLite migrations. No-op on fresh installs. Failure is logged,
+# never blocks boot - operator deals with it manually if it ever happens.
 def ensure_schema_compatibility() -> None:
     if db.engine.dialect.name != "sqlite":
         return
@@ -131,14 +123,12 @@ def ensure_schema_compatibility() -> None:
                 )
                 db.session.commit()
 
-            # Project rename pass: the project identifiers used to be DR
-            # and SmartBin. Migrate legacy rows in-place so existing test
-            # data keeps working under the new names.
+            # DR -> Fundus, SmartBin -> WasteSorting (legacy IDs).
             db.session.execute(text("UPDATE images SET project='Fundus' WHERE project='DR'"))
             db.session.execute(
                 text("UPDATE images SET project='WasteSorting' WHERE project='SmartBin'")
             )
-            # Label rename pass: lowercase "severity X" -> "Severity X".
+            # "severity X" -> "Severity X" (legacy casing).
             for old, new in (
                 ("severity 0", "Severity 0"),
                 ("severity 1", "Severity 1"),
@@ -156,8 +146,8 @@ def ensure_schema_compatibility() -> None:
         logging.exception("Schema migration failed; check the database manually")
 
 
-# Branded 403 / 404 / 413 / 500 pages.
 def register_error_handlers(flask_app: Flask) -> None:
+    """Branded 403 / 404 / 413 / 500 pages."""
     @flask_app.errorhandler(403)
     def forbidden(_error):
         return render_template("errors/403.html"), 403
@@ -173,7 +163,7 @@ def register_error_handlers(flask_app: Flask) -> None:
             "Please upload a smaller image.",
             "warning",
         )
-        # 413 might fire for anonymous attempts too - send them to login.
+        # Anonymous 413 attempts get bounced to login, not annotation.
         target = "annotation.annotation_page" if current_user.is_authenticated else "auth.login"
         return redirect(url_for(target))
 
@@ -182,9 +172,7 @@ def register_error_handlers(flask_app: Flask) -> None:
         return render_template("errors/500.html"), 500
 
 
-# CLI commands for off-line maintenance. The promote-admin command is the
-# safety net when nobody is admin (e.g. you wiped the DB or the only
-# admin demoted themselves through direct SQL).
+# Offline CLI: promote-admin is the lockout safety net.
 def register_cli_commands(flask_app: Flask) -> None:
     import click
     from sqlalchemy.exc import SQLAlchemyError

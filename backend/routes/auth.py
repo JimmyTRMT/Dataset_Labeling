@@ -1,8 +1,6 @@
-"""Authentication blueprint: login, logout, register, forgot, reset.
+"""Auth blueprint: login / logout / register / forgot / reset.
 
-Kept in one file because every route lives in the same lifecycle (account
-creation, session management, password recovery). All POST endpoints are
-WTForms-backed, so CSRF protection is enforced out of the box by Flask-WTF.
+Every POST is WTForms-backed, so CSRF protection comes for free via Flask-WTF.
 """
 
 from flask import (
@@ -30,8 +28,7 @@ from backend.models.database import ROLE_ADMIN, ROLE_ANNOTATOR, User, db
 auth_bp = Blueprint("auth", __name__)
 
 
-# Helper: send the user back to the page they came from if it is a safe
-# in-app path, otherwise to the home page. Used after login.
+# Open-redirect guard: only follow ?next= if it points to an internal path.
 def _safe_redirect_target(default_endpoint: str = "home") -> str:
     next_url = request.args.get("next") or request.form.get("next")
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
@@ -39,21 +36,17 @@ def _safe_redirect_target(default_endpoint: str = "home") -> str:
     return url_for(default_endpoint)
 
 
-# ---------------------------------------------------------------------------
-# Login / logout
-# ---------------------------------------------------------------------------
+# ---- login / logout -------------------------------------------------------
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    # Already authenticated users skip the form straight to the home page.
     if current_user.is_authenticated:
         return redirect(url_for("home"))
 
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data.strip()).first()
-        # Defense-in-depth: same response time and message whether the user
-        # does not exist or the password is wrong - avoids enumeration.
+        # Same message + timing whether the user exists or not (anti-enumeration).
         if user is None or not user.check_password(form.password.data):
             flash("Invalid username or password.", "warning")
             return redirect(url_for("auth.login"))
@@ -65,7 +58,7 @@ def login():
     return render_template("auth/login.html", form=form)
 
 
-# POST-only so the form CSRF token guards against drive-by logout links.
+# POST-only + CSRF token: drive-by logout links cannot kick the user out.
 @auth_bp.post("/logout")
 @login_required
 def logout():
@@ -75,9 +68,7 @@ def logout():
     return redirect(url_for("auth.login"))
 
 
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
+# ---- registration ---------------------------------------------------------
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
@@ -86,8 +77,7 @@ def register():
 
     form = RegisterForm()
     if form.validate_on_submit():
-        # First registered user becomes admin so the app is usable out of
-        # the box. Everyone after that is a plain annotator.
+        # First user becomes admin so the app is usable on a fresh install.
         is_first_user = User.query.count() == 0
         role = ROLE_ADMIN if is_first_user else ROLE_ANNOTATOR
 
@@ -119,11 +109,8 @@ def register():
     return render_template("auth/register.html", form=form)
 
 
-# ---------------------------------------------------------------------------
-# Forgot password : 2-step recovery via security question
-# ---------------------------------------------------------------------------
+# ---- forgot password (2-step, no email) ----------------------------------
 
-# Session key holding the username under recovery between steps 1 and 2.
 RESET_SESSION_KEY = "reset_username"
 
 
@@ -136,8 +123,7 @@ def forgot_password():
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data.strip()).first()
         if user is None:
-            # Same wording as a successful step to avoid leaking which
-            # usernames exist via the recovery flow.
+            # Identical wording on hit/miss - never leak which usernames exist.
             flash("If that account exists, the security question is shown below.", "secondary")
             return redirect(url_for("auth.forgot_password"))
 
@@ -154,7 +140,7 @@ def reset_password():
 
     username = session.get(RESET_SESSION_KEY)
     if not username:
-        # No /forgot step recorded -> bounce back to step 1.
+        # Direct hit on /reset without /forgot - bounce to step 1.
         return redirect(url_for("auth.forgot_password"))
 
     user = User.query.filter_by(username=username).first()

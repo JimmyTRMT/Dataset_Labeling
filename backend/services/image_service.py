@@ -9,31 +9,24 @@ from backend.models.database import ImageRecord, db
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff", "webp"}
 
-# Holding pen for images that have been uploaded but not labeled yet.
-# Sits inside data/images/ so serving and cleanup share one root.
+# Holding pen for unlabeled uploads. Lives inside data/images/.
 PENDING_FOLDER = "_pending"
 
-# Matches "Fundus_007.jpg" or "Severity_0/Fundus_007.jpg" and captures the
-# integer counter. Used to compute the next sequence number per project.
+# Captures the integer in "Fundus_007.jpg" or "Severity_0/Fundus_007.jpg".
 _SEQUENCE_RE = re.compile(r"(?:^|/)[A-Za-z]+_(\d+)\.[A-Za-z0-9]+$")
 
 
-# True iff the upload's filename ends with a whitelisted image extension.
 def is_allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-# Builds a filesystem-safe folder name from a label. Spaces become
-# underscores so "Severity 0" lands in data/images/Severity_0/.
 def label_to_folder_name(label: str) -> str:
+    """Filesystem-safe folder name: "Severity 0" -> "Severity_0"."""
     return re.sub(r"\s+", "_", label.strip())
 
 
-# Returns the next integer counter for a project. We scan the DB for all
-# stored filenames matching the project's prefix and return max + 1.
-# Stays correct after deletions and works regardless of which folder the
-# file currently lives in (pending or final).
 def next_sequence_number(project_id: str) -> int:
+    """Next free counter for a project. Survives deletions; folder-agnostic."""
     prefix = _project_prefix(project_id)
     pattern = f"%{prefix}_%"
     candidates = (
@@ -50,9 +43,8 @@ def next_sequence_number(project_id: str) -> int:
     return highest + 1
 
 
-# Stage 1 of the annotation workflow: saves one uploaded image into the
-# `_pending/` folder under its sequential project name (Fundus_007.jpg)
-# and returns an unlabeled ImageRecord. The caller commits the row.
+# Stage 1: save one upload to _pending/ under its sequential name,
+# return an unlabeled ImageRecord. Caller commits.
 def persist_pending_image(
     file: FileStorage,
     upload_folder: str,
@@ -78,7 +70,7 @@ def persist_pending_image(
     pending_dir.mkdir(parents=True, exist_ok=True)
 
     target_path = pending_dir / base_filename
-    # Defensive bump in case a stale file with the same name lingers on disk.
+    # Bump if a stale file with the same name is still on disk.
     while target_path.exists():
         sequence += 1
         base_filename = f"{prefix}_{sequence:03d}.{extension}"
@@ -96,10 +88,8 @@ def persist_pending_image(
     )
 
 
-# Stage 2 of the annotation workflow: moves the file from `_pending/` into
-# its label folder, then updates the record (label + status + stored
-# filename). The caller commits the row. Raises OSError if the rename
-# fails (callers should catch and surface a flash).
+# Stage 2: move _pending/ -> <Label>/, update record. Caller commits.
+# Raises OSError on rename failure; caller flashes a warning.
 def finalize_with_label(image: ImageRecord, label: str, upload_folder: str) -> None:
     upload_root = Path(upload_folder)
     source = upload_root / image.stored_filename
@@ -110,7 +100,7 @@ def finalize_with_label(image: ImageRecord, label: str, upload_folder: str) -> N
     target_dir.mkdir(parents=True, exist_ok=True)
 
     target_path = target_dir / base_filename
-    # Should not happen since names are unique per project, but stay safe.
+    # Names are unique per project, but double-check before clobbering.
     if target_path.exists() and target_path.resolve() != source.resolve():
         raise OSError(f"Destination already exists: {target_path}")
 
@@ -122,8 +112,7 @@ def finalize_with_label(image: ImageRecord, label: str, upload_folder: str) -> N
     image.stored_filename = f"{label_folder}/{base_filename}"
 
 
-# Best-effort deletion: unlinks the file if present, swallows OSError so
-# the caller can still drop the DB row even when the file is gone.
+# Best-effort delete: swallow OSError so the DB row can still be dropped.
 def delete_image_file(image: ImageRecord, upload_folder: str) -> None:
     target = Path(upload_folder) / image.stored_filename
     try:
@@ -133,8 +122,7 @@ def delete_image_file(image: ImageRecord, upload_folder: str) -> None:
         pass
 
 
-# Returns the filename prefix for a project ("Fundus" or "Waste"). Raises
-# ValueError on unknown project so misconfigured callers fail loudly.
+# Looks up the filename prefix. Fails loudly on unknown project.
 def _project_prefix(project_id: str) -> str:
     from flask import current_app
 

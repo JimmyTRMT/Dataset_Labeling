@@ -8,32 +8,25 @@ from werkzeug.security import check_password_hash, generate_password_hash
 db = SQLAlchemy()
 
 
-# Two user roles. Admins are reserved for future privileged actions; for
-# now every user can annotate and browse.
 ROLE_ADMIN = "admin"
 ROLE_ANNOTATOR = "annotator"
 
-# PBKDF2-SHA256 is the algorithm Werkzeug's generate_password_hash uses
-# when we pass "pbkdf2:sha256". Centralised here so any future change
-# (e.g. argon2 via passlib) only touches one place.
+# Single source of truth for the hashing scheme. Werkzeug's PBKDF2-SHA256
+# at 1M iterations by default. Swap once here if argon2 lands later.
 PASSWORD_HASH_METHOD = "pbkdf2:sha256"
 
 
-# Represents a registered user. Passwords AND security answers are stored
-# as PBKDF2-SHA256 hashes - the plain text never touches the database.
 class User(db.Model, UserMixin):
+    """Registered user. Passwords AND security answers are PBKDF2-hashed."""
+
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), nullable=False, unique=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    # Role gates future admin-only actions. Defaults to annotator.
     role = db.Column(db.String(20), nullable=False, default=ROLE_ANNOTATOR)
-    # Free-form question the user picks themselves so the answer is
-    # something only they would naturally know.
+    # User-picked free-form question (the answer is effectively a second password).
     security_question = db.Column(db.String(255), nullable=False)
-    # The answer is hashed too - if the DB leaks, attackers can't read
-    # what was, in effect, a second password.
     security_answer_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
@@ -51,8 +44,7 @@ class User(db.Model, UserMixin):
 
     @staticmethod
     def _normalize_answer(raw_answer: str) -> str:
-        # Trim + lowercase so "Whiskers", "whiskers", "  whiskers " all match.
-        # We do NOT touch the question (capitalisation matters there).
+        # Trim + lowercase so "Whiskers" / "whiskers" / "  whiskers " all match.
         return (raw_answer or "").strip().lower()
 
     def set_security_answer(self, raw_answer: str) -> None:
@@ -73,19 +65,17 @@ class User(db.Model, UserMixin):
         return self.role == ROLE_ADMIN
 
 
-# ImageRecord represents one uploaded image plus all the metadata we track
-# around it (project, contributor, label, timestamps).
 class ImageRecord(db.Model):
+    """One uploaded image plus its metadata."""
+
     __tablename__ = "images"
 
     id = db.Column(db.Integer, primary_key=True)
     original_filename = db.Column(db.String(255), nullable=False)
     stored_filename = db.Column(db.String(255), nullable=False, unique=True)
-    # Each image belongs to one research project (Fundus or WasteSorting).
-    # Drives which label set is offered on the labeling page and which
-    # export bucket the row ends up in.
+    # Picks the label set and the export bucket.
     project = db.Column(db.String(50), nullable=False, default="Fundus")
-    # Captured from current_user.username at annotation time.
+    # Stamped from current_user.username at annotation time.
     contributor = db.Column(db.String(100), nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
@@ -97,8 +87,6 @@ class ImageRecord(db.Model):
     last_viewed_at = db.Column(db.DateTime, nullable=True)
     labeling_duration_seconds = db.Column(db.Float, nullable=True)
 
-    # mark_as_labeled flips the row from "unlabeled" to "labeled" and records
-    # how long the annotation took.
     def mark_as_labeled(self, label_value: str, duration_seconds: float | None = None) -> None:
         self.label = label_value
         self.status = "labeled"
@@ -106,7 +94,6 @@ class ImageRecord(db.Model):
         self.labeling_duration_seconds = duration_seconds
         self.last_viewed_at = None
 
-    # to_export_row gives a flat dict used by both CSV and JSON exporters.
     def to_export_row(self) -> dict:
         return {
             "id": self.id,

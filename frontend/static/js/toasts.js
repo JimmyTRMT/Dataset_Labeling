@@ -1,7 +1,4 @@
-// Handles the flash toasts rendered by base.html:
-//   * auto-dismiss every toast after 3s with a 300ms fade,
-//   * close button per toast (data-toast-close) removes it immediately.
-// Safe no-op when the page has no toast.
+// Flash toasts: auto-dismiss after 3s, close button removes immediately.
 
 (function () {
     var toasts = document.querySelectorAll("[data-toast]");
@@ -13,7 +10,6 @@
         setTimeout(function () { toast.remove(); }, 300);
     }
 
-    // Manual close: clicking the X removes the toast immediately.
     document.querySelectorAll("[data-toast-close]").forEach(function (button) {
         button.addEventListener("click", function () {
             var toast = button.closest("[data-toast]");
@@ -21,7 +17,6 @@
         });
     });
 
-    // Auto-dismiss after 3 seconds.
     setTimeout(function () {
         toasts.forEach(fadeAndRemove);
     }, 3000);

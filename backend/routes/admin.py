@@ -1,9 +1,7 @@
-"""Admin blueprint: manage users (list, promote, demote, delete).
-Every route is behind @admin_required so non-admins (including anonymous)
-get a 403. We also guard against the obvious foot-guns:
-  * an admin cannot demote themselves if they are the only one left
-    (else nobody could promote anyone again),
-  * an admin cannot delete themselves (avoid accidental lockout).
+"""Admin blueprint: list / promote / demote / delete users.
+
+Guarded by @admin_required at the blueprint level. Self-protection:
+last-admin cannot demote or be deleted, no self-delete from the panel.
 """
 
 from flask import (
@@ -25,8 +23,7 @@ from backend.models.database import ROLE_ADMIN, ROLE_ANNOTATOR, User, db
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
-# Every URL under /admin is gated by admin_required. Putting it at the
-# blueprint level guarantees no endpoint accidentally stays public.
+# Blueprint-level guard - no endpoint can accidentally stay public.
 @admin_bp.before_request
 @admin_required
 def _require_admin():
@@ -56,8 +53,7 @@ def change_role(user_id: int):
         flash("Invalid role.", "warning")
         return redirect(url_for("admin.users_list"))
 
-    # Refuse to demote yourself if you would leave the system without an
-    # admin (you are the only admin left).
+    # Refuse self-demotion if it would leave zero admins.
     if target.id == current_user.id and new_role == ROLE_ANNOTATOR:
         remaining_admins = User.query.filter_by(role=ROLE_ADMIN).count()
         if remaining_admins <= 1:

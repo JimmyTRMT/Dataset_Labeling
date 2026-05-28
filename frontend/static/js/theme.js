@@ -1,6 +1,5 @@
-// Theme toggle. The initial `dark` class is applied by an inline script
-// in base.html (before paint, no FOUC). This file wires the toggle button
-// once the page is interactive.
+// Theme toggle button. Initial class is set pre-paint by base.html
+// to avoid FOUC; this file just wires the runtime toggle.
 
 (function () {
     var toggle = document.getElementById("theme-toggle");
@@ -11,6 +10,6 @@
         var nowDark = html.classList.toggle("dark");
         try {
             localStorage.setItem("theme", nowDark ? "dark" : "light");
-        } catch (e) { /* localStorage disabled - choice won't persist */ }
+        } catch (e) { /* private mode: choice won't persist */ }
     });
 })();

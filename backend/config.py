@@ -3,21 +3,16 @@ from datetime import timedelta, timezone
 from pathlib import Path
 
 
-# UI runs in Thailand, so user-facing timestamps are converted to Thai
-# local time (UTC+7). Thailand has no DST, so a fixed offset stays exact
-# year-round and avoids depending on the OS tzdata. DB columns stay UTC.
+# Thailand has no DST, fixed UTC+7 stays accurate year-round. DB stays UTC.
 DISPLAY_TIMEZONE = timezone(timedelta(hours=7), name="ICT")
 
 
-# Two research projects share this tool. Identifiers travel through URLs,
-# DB rows, export filenames, and stored-file prefixes, so they must stay
-# stable once chosen.
+# Project IDs end up in URLs, DB rows, filenames - never rename in place.
 PROJECT_FUNDUS = "Fundus"
 PROJECT_WASTE = "WasteSorting"
 PROJECT_IDS: tuple[str, ...] = (PROJECT_FUNDUS, PROJECT_WASTE)
 
-# Label sets are fixed by the spec, not env-driven, so the form choices
-# always match what the researchers asked for.
+# Label sets are spec-fixed (not env-driven) to keep export schemas stable.
 PROJECT_LABELS: dict[str, list[str]] = {
     PROJECT_FUNDUS: [
         "Severity 0",
@@ -29,26 +24,21 @@ PROJECT_LABELS: dict[str, list[str]] = {
     PROJECT_WASTE: ["PET", "Can", "Plastic"],
 }
 
-# Each project owns a short filename prefix used when we rename uploads
-# (e.g. Fundus_001.jpg, Waste_042.jpg). The counter that fills the digits
-# is project-wide so files of the same project share one numbering line.
+# Per-project filename prefix. Counter is project-wide (Fundus_001, ...).
 PROJECT_FILENAME_PREFIX: dict[str, str] = {
     PROJECT_FUNDUS: "Fundus",
     PROJECT_WASTE: "Waste",
 }
 
 
-# Casts env strings ("true", "1", "yes", "on") to a boolean.
 def _as_bool(value: str | None, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-# Forces relative SQLite URLs to live under the project root.
 def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
-    # Flask-SQLAlchemy resolves relative SQLite paths against app.instance_path,
-    # not the project root. Pin them to the project root for predictable behavior.
+    """Resolve relative SQLite URLs against the project root, not instance_path."""
     if not raw_url.startswith("sqlite:///"):
         return raw_url
     path_part = raw_url[len("sqlite:///"):]
@@ -59,9 +49,8 @@ def _anchor_sqlite_url(raw_url: str, project_root: Path) -> str:
     return f"sqlite:///{absolute_path}"
 
 
-# Normalises a folder path to be absolute, anchored at the project root.
 def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> str:
-    # Werkzeug's send_file rejects relative paths, so normalise to absolute.
+    """Force a folder path to absolute. send_file rejects relative ones."""
     chosen = raw_value or default
     path = Path(chosen)
     if not path.is_absolute():
@@ -69,8 +58,9 @@ def _anchor_folder(raw_value: str | None, default: str, project_root: Path) -> s
     return str(path)
 
 
-# Gathers every runtime setting in one place. Read once, applied app-wide.
 class Config:
+    """All runtime settings. Read once at import, applied app-wide."""
+
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     DEFAULT_SECRET_KEY = "dev-change-me-secret"
     DEFAULT_DATABASE_PATH = (PROJECT_ROOT / "database" / "dataset.db").resolve().as_posix()
@@ -96,8 +86,7 @@ class Config:
         PROJECT_ROOT,
     )
 
-    # Project metadata is static (per spec) and exposed on the Flask config
-    # so routes can read it via current_app.config without re-importing.
+    # Exposed on Flask config so routes can read via current_app.
     PROJECT_IDS = PROJECT_IDS
     PROJECT_LABELS = PROJECT_LABELS
     PROJECT_FILENAME_PREFIX = PROJECT_FILENAME_PREFIX

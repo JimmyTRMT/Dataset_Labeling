@@ -1,14 +1,9 @@
-// Dataset browser interactions, applied independently to every project
-// section on the page:
-//   * search input filters the rows by stored or original filename,
-//   * the page-size selector + Prev/Next buttons paginate the result,
-//   * delete forms ask for confirmation before submitting.
+// Dataset browser: per-section search, pagination, and delete confirm.
+// Sections keep independent state so Fundus and WasteSorting paginate
+// without stepping on each other.
 
 (function () {
 
-    // Wire one project section. Each section maintains its own state
-    // (current page, current query) so users can navigate Fundus and
-    // WasteSorting independently.
     function wireSection(section) {
         var body = section.querySelector("[data-dataset-body]");
         if (!body) return;
@@ -94,8 +89,7 @@
     document.querySelectorAll("[data-dataset-section]").forEach(wireSection);
 
 
-    // Delete confirmation. Wraps every delete form, so a stray click
-    // never destroys data silently.
+    // Delete confirm on every form so a stray click can't wipe data.
     document.querySelectorAll(".delete-image-form").forEach(function (form) {
         form.addEventListener("submit", function (event) {
             var confirmed = confirm("Delete this image permanently?");
