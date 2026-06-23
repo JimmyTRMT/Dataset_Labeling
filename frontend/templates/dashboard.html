@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% set active_page = 'dataset' %}
+{% block title %}{{ active_project }} Dataset - Dataset Labeling Platform{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <header>
+        <h1 class="text-2xl font-semibold">
+            {% if active_project == 'Fundus' %}Fundus Dataset
+            {% elif active_project == 'WasteSorting' %}WasteSorting Dataset
+            {% else %}{{ active_project }} Dataset{% endif %}
+        </h1>
+        <p class="text-slate-600 dark:text-slate-400 text-sm mt-1">
+            Search, paginate, inspect, or delete the labeled images of this project.
+        </p>
+    </header>
+
+    {# Project tabs: one click switches between Fundus and WasteSorting. #}
+    <nav class="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700">
+        {% for project_id in project_ids %}
+            <a href="{{ url_for('annotation.dataset_for_project', project_id=project_id) }}"
+               class="px-4 py-2 text-sm font-medium rounded-t-md border border-b-0 transition-colors
+                      {% if project_id == active_project %}
+                          border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800
+                          text-blue-700 dark:text-blue-300 border-b-blue-500
+                      {% else %}
+                          border-transparent text-slate-500 dark:text-slate-400
+                          hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800
+                      {% endif %}">
+                {% if project_id == 'Fundus' %}Fundus Dataset
+                {% elif project_id == 'WasteSorting' %}WasteSorting Dataset
+                {% else %}{{ project_id }}{% endif %}
+            </a>
+        {% endfor %}
+    </nav>
+
+    <section class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6"
+             data-dataset-section data-project="{{ active_project }}">
+
+        <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+            <p class="text-sm text-slate-500 dark:text-slate-400">
+                {{ images | length }} labeled image{{ '' if images|length == 1 else 's' }}
+            </p>
+
+            <div class="flex flex-wrap items-end gap-3">
+                <div>
+                    <label for="search-{{ active_project }}"
+                           class="block text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                        Search
+                    </label>
+                    <input id="search-{{ active_project }}" type="search" placeholder="filter by filename"
+                           data-dataset-search
+                           class="px-3 py-1.5 text-sm rounded-md border bg-white dark:bg-slate-900
+                                  border-slate-200 dark:border-slate-700 focus:border-blue-500
+                                  focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-64">
+                </div>
+                <div>
+                    <label for="page-size-{{ active_project }}"
+                           class="block text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                        Rows per page
+                    </label>
+                    <select id="page-size-{{ active_project }}" data-dataset-page-size
+                            class="px-3 py-1.5 text-sm rounded-md border bg-white dark:bg-slate-900
+                                   border-slate-200 dark:border-slate-700 focus:border-blue-500
+                                   focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                        <option value="10" selected>10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        {% if images %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400
+                                   border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                            <th class="px-3 py-2 text-left w-20">Thumbnail</th>
+                            <th class="px-3 py-2 text-left">Filename</th>
+                            <th class="px-3 py-2 text-left">Label</th>
+                            <th class="px-3 py-2 text-left">Description</th>
+                            <th class="px-3 py-2 text-left">Author</th>
+                            <th class="px-3 py-2 text-left">Upload date</th>
+                            <th class="px-3 py-2 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody data-dataset-body>
+                        {% for image in images %}
+                            <tr data-row
+                                data-filename="{{ image.original_filename | lower }} {{ image.stored_filename | lower }}"
+                                class="border-b border-slate-100 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-700/30 align-top">
+                                <td class="px-3 py-2">
+                                    <img src="{{ url_for('annotation.serve_image', filename=image.stored_filename) }}"
+                                         alt="{{ image.original_filename }}"
+                                         title="{{ image.original_filename }}"
+                                         class="w-14 h-14 object-cover rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900">
+                                </td>
+                                <td class="px-3 py-2">
+                                    <span class="font-mono text-xs">{{ image.stored_filename }}</span>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        original: {{ image.original_filename }}
+                                    </p>
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded-md text-xs font-medium bg-blue-500/15 text-blue-700 dark:text-blue-300">
+                                        {{ image.label or '-' }}
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2 max-w-xs">
+                                    {% if image.notes %}
+                                        <p class="text-xs text-slate-600 dark:text-slate-300 line-clamp-3"
+                                           title="{{ image.notes }}">
+                                            {{ image.notes }}
+                                        </p>
+                                    {% else %}
+                                        <span class="text-xs text-slate-400">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap">{{ image.contributor or '-' }}</td>
+                                <td class="px-3 py-2 whitespace-nowrap">{{ image.uploaded_at | local_time }}</td>
+                                <td class="px-3 py-2 text-right whitespace-nowrap">
+                                    <form method="POST" action="{{ url_for('annotation.delete_annotation', image_id=image.id) }}"
+                                          class="inline delete-image-form">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="px-2.5 py-1 text-xs rounded border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 transition-colors">
+                                            Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 mt-3 text-sm">
+                <p data-dataset-status class="text-slate-500 dark:text-slate-400 text-xs"></p>
+                <div class="flex items-center gap-1">
+                    <button type="button" data-dataset-prev
+                            class="px-3 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Prev
+                    </button>
+                    <span data-dataset-page-label class="px-3 text-xs text-slate-500 dark:text-slate-400">Page 1</span>
+                    <button type="button" data-dataset-next
+                            class="px-3 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Next
+                    </button>
+                </div>
+            </div>
+        {% else %}
+            <div class="px-4 py-6 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-400">
+                No labeled images in {{ active_project }} yet.
+                <a href="{{ url_for('annotation.annotation_page') }}" class="text-blue-600 dark:text-blue-400 underline">Add the first one</a>.
+            </div>
+        {% endif %}
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dataset.js') }}"></script>
+{% endblock %}

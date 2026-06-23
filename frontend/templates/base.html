@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dataset Labeling Platform{% endblock %}</title>
+
+    {# Apply theme pre-paint to avoid FOUC. Only inline script we keep. #}
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem("theme");
+                if (saved !== "light") {
+                    document.documentElement.classList.add("dark");
+                }
+            } catch (e) { /* private mode: default to dark */ }
+        })();
+    </script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: "class" };
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 min-h-screen antialiased transition-colors">
+
+{# Sticky nav on every page. #}
+<nav class="bg-white/80 dark:bg-slate-800/80 backdrop-blur border-b border-slate-200 dark:border-slate-700 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-14">
+            <a href="{{ url_for('home') }}" class="flex items-center gap-2">
+                <span class="inline-flex w-8 h-8 items-center justify-center bg-blue-600 rounded-md text-white font-bold text-sm">DL</span>
+                <span class="font-semibold">Dataset Labeling</span>
+            </a>
+
+            <div class="flex items-center gap-3">
+                {# Nav is only for signed-in users. Admin link is appended
+                   for admins only. Collapses into a hamburger below md. #}
+                {% if current_user.is_authenticated %}
+                    {% set nav_links = [
+                        ('home',       url_for('home'),                          'Home'),
+                        ('annotation', url_for('annotation.annotation_page'),    'Annotation'),
+                        ('dataset',    url_for('annotation.dataset_browser'),    'Dataset'),
+                        ('export',     url_for('export.export_page'),            'Export'),
+                    ] %}
+                    {% if current_user.is_admin %}
+                        {% set nav_links = nav_links + [('admin', url_for('admin.users_list'), 'Admin')] %}
+                    {% endif %}
+                    <div class="hidden md:flex items-center gap-1 text-sm">
+                        {% for page_id, href, caption in nav_links %}
+                            <a href="{{ href }}"
+                               class="px-3 py-1.5 rounded-md transition-colors
+                                      {% if active_page == page_id %}
+                                          bg-blue-600 text-white
+                                      {% else %}
+                                          text-slate-600 hover:bg-slate-200 hover:text-slate-900
+                                          dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                                      {% endif %}">
+                                {{ caption }}
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                {# Hamburger: < md, signed-in only. main.js toggles aria-expanded. #}
+                {% if current_user.is_authenticated %}
+                    <button id="mobile-nav-toggle" type="button"
+                            class="md:hidden p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            aria-label="Toggle navigation menu"
+                            aria-controls="mobile-nav-panel"
+                            aria-expanded="false">
+                        <svg id="mobile-nav-icon-open" class="w-5 h-5 block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                        <svg id="mobile-nav-icon-close" class="w-5 h-5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                            <line x1="6" y1="18" x2="18" y2="6"></line>
+                        </svg>
+                    </button>
+                {% endif %}
+
+                {# Theme toggle: visible to everyone, signed in or not. #}
+                <button id="theme-toggle" type="button"
+                        class="ml-1 p-2 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        aria-label="Toggle theme">
+                    <svg id="theme-icon-sun" class="w-4 h-4 hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+                    </svg>
+                    <svg id="theme-icon-moon" class="w-4 h-4 block dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+
+                {# Identity: username + POST-only logout, or sign-in link. #}
+                {% if current_user.is_authenticated %}
+                    <div class="flex items-center gap-2 ml-1 pl-3 border-l border-slate-200 dark:border-slate-700">
+                        <span class="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">
+                            {{ current_user.username }}{% if current_user.is_admin %}
+                                <span class="px-1.5 py-0.5 ml-1 rounded text-[10px] uppercase tracking-wider bg-blue-500/15 text-blue-700 dark:text-blue-300">admin</span>
+                            {% endif %}
+                        </span>
+                        <form method="POST" action="{{ url_for('auth.logout') }}" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                                    class="px-3 py-1.5 text-sm rounded-md text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}"
+                       class="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors">
+                        Sign in
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+
+        {# Mobile dropdown: < md only, signed-in only. main.js toggles `hidden`. #}
+        {% if current_user.is_authenticated %}
+            <div id="mobile-nav-panel"
+                 class="hidden md:hidden border-t border-slate-200 dark:border-slate-700 px-4 sm:px-6 py-3 space-y-1 text-sm">
+                {% for page_id, href, caption in nav_links %}
+                    <a href="{{ href }}"
+                       class="block px-3 py-2 rounded-md transition-colors
+                              {% if active_page == page_id %}
+                                  bg-blue-600 text-white
+                              {% else %}
+                                  text-slate-700 hover:bg-slate-200 hover:text-slate-900
+                                  dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white
+                              {% endif %}">
+                        {{ caption }}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</nav>
+
+{# Floating toasts. Auto-dismiss after 3s (handled by toasts.js). #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div id="toast-stack" class="fixed top-20 right-4 z-50 space-y-2 max-w-sm">
+            {% for category, message in messages %}
+                <div class="px-4 py-3 rounded-lg shadow-lg flex items-start gap-3 border
+                            {% if category == 'success' %}bg-blue-600/95 border-blue-500 text-white
+                            {% elif category == 'warning' %}bg-amber-500/95 border-amber-400 text-slate-900
+                            {% else %}bg-slate-700/95 border-slate-600 text-slate-100{% endif %}"
+                     data-toast>
+                    <span class="flex-1 text-sm">{{ message }}</span>
+                    <button type="button" data-toast-close
+                            class="opacity-70 hover:opacity-100 font-bold text-lg leading-none">&times;</button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endwith %}
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+</main>
+
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/toasts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

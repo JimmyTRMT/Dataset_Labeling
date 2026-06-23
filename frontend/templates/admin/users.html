@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% set active_page = 'admin' %}
+{% block title %}Users - Dataset Labeling Platform{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <header class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-semibold">User management</h1>
+            <p class="text-slate-600 dark:text-slate-400 text-sm mt-1">
+                Promote annotators to admin, demote admins, or remove accounts.
+            </p>
+        </div>
+        <p class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            {{ users | length }} user{{ '' if users|length == 1 else 's' }} &middot; {{ admin_count }} admin{{ '' if admin_count == 1 else 's' }}
+        </p>
+    </header>
+
+    <section class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400
+                               border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                        <th class="px-3 py-2 text-left">Username</th>
+                        <th class="px-3 py-2 text-left">Role</th>
+                        <th class="px-3 py-2 text-left">Created</th>
+                        <th class="px-3 py-2 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                        <tr class="border-b border-slate-100 dark:border-slate-700/60 hover:bg-slate-50 dark:hover:bg-slate-700/30 align-middle">
+                            <td class="px-3 py-3 font-medium">
+                                {{ user.username }}
+                                {% if user.id == current_user.id %}
+                                    <span class="ml-2 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">you</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-3">
+                                {% if user.is_admin %}
+                                    <span class="px-2 py-0.5 rounded-md text-xs font-medium bg-blue-500/15 text-blue-700 dark:text-blue-300">admin</span>
+                                {% else %}
+                                    <span class="px-2 py-0.5 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">annotator</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-3 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                                {{ user.created_at | local_time }}
+                            </td>
+                            <td class="px-3 py-3 text-right whitespace-nowrap">
+                                {# Promote / demote button - toggles role. #}
+                                <form method="POST" action="{{ url_for('admin.change_role', user_id=user.id) }}" class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if user.is_admin %}
+                                        <input type="hidden" name="role" value="annotator">
+                                        <button type="submit"
+                                                class="px-2.5 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                                            Demote
+                                        </button>
+                                    {% else %}
+                                        <input type="hidden" name="role" value="admin">
+                                        <button type="submit"
+                                                class="px-2.5 py-1 text-xs rounded border border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-500/10 transition-colors">
+                                            Promote to admin
+                                        </button>
+                                    {% endif %}
+                                </form>
+
+                                {% if user.id != current_user.id %}
+                                    <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}"
+                                          class="inline admin-delete-form ml-1">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="px-2.5 py-1 text-xs rounded border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 transition-colors">
+                                            Delete
+                                        </button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <p class="text-xs text-slate-500 dark:text-slate-400">
+        Safety: you cannot demote yourself if you are the last admin, and you cannot delete your own account from here.
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

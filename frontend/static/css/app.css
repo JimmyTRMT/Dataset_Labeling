@@ -1,0 +1,41 @@
+/* Tailwind handles most styling. This file covers what utilities can't. */
+
+/* Smooth Light <-> Dark transitions. */
+html,
+html body,
+nav,
+section,
+form,
+table {
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+/* Dropzone is the visible affordance; raw file input stays hidden. */
+input[type="file"].hidden {
+    display: none;
+}
+
+/* ---- image viewer ------------------------------------------------- */
+
+/* Frame height is set via Tailwind on the template (h-[50vh] lg:h-[640px]).
+   position:relative comes from the `relative` utility there. */
+
+/* Image is absolutely centered; annotation.js layers transforms on top. */
+.image-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 100%;
+    max-height: 100%;
+    cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+    /* Belt-and-braces: JS preventDefaults the dragstart too, but this
+       stops Firefox from kicking off a drag preview during a pan. */
+    -webkit-user-drag: none;
+}
+
+.image-canvas.is-dragging {
+    cursor: grabbing;
+}
