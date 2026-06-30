@@ -30,6 +30,8 @@ Two research projects share the same UI, with strict data separation:
    add author + description; (2) inspect the image in an interactive
    viewer (mouse-wheel zoom, click-and-drag pan, rotate, flip, reset)
    and pick a label from large cards (or hit `1`-`9` on the keyboard).
+   Pending uploads are **per-user**: two annotators working at the
+   same time never see each other's drafts.
 4. **Touch-ready image viewer** &mdash; the same viewer works at the
    finger on tablet and phone via the Pointer Events API: one finger
    pans, two fingers pinch-zoom. `touch-action: none` on the frame
@@ -40,12 +42,17 @@ Two research projects share the same UI, with strict data separation:
    Project-prefixed names mean no cross-project collisions, ever.
 6. **Dataset browser** &mdash; one tab per project, per-tab text search
    and pagination (10 / 25 / 50 / 100), thumbnail + filename + label +
-   description + author + upload date. Confirm before delete.
+   description + author + upload date. Delete is **role-aware**:
+   admins can remove any image, annotators only their own. The Delete
+   button is hidden when the rule doesn't grant access, but the real
+   barrier is a server-side `abort(403)`.
 7. **Live analytics dashboard** &mdash; each project card on the home
    page opens `/dashboard/<project>`. A doughnut chart (Chart.js) sits
    next to a typed label breakdown with counts and percentages. Labels
    are queried in SQL via `GROUP BY` &mdash; **never hardcoded** &mdash;
-   so the view always reflects the current database. Chart colours
+   so the view always reflects the current database. A personal
+   "average labeling time" card (scoped to the current user on this
+   project, NULL durations ignored) sits above the chart. Chart colours
    re-render on Light / Dark toggle without a page reload.
 8. **Exports** &mdash; one card per project, three formats:
    - **CSV** &mdash; 26 columns, `;` delimiter, UTF-8 with BOM. Opens
