@@ -36,6 +36,34 @@
     </header>
 
     {% if label_counts %}
+        {# Project-scoped stat card. Independent of the chart - pure server-rendered HTML. #}
+        <section class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6">
+            <div class="flex items-baseline justify-between gap-4">
+                <div>
+                    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Your average labeling time
+                    </h2>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Mean time per image you annotated on the {{ dataset_type }} project.
+                    </p>
+                </div>
+                <p class="text-3xl font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                    {% if avg_labeling_seconds is not none %}
+                        {% if avg_labeling_seconds >= 60 %}
+                            {{ (avg_labeling_seconds // 60) | int }}m {{ (avg_labeling_seconds % 60) | round(0) | int }}s
+                        {% else %}
+                            {{ avg_labeling_seconds }} s
+                        {% endif %}
+                    {% else %}
+                        <span class="text-slate-400 dark:text-slate-500">&mdash;</span>
+                    {% endif %}
+                </p>
+            </div>
+            {% if avg_labeling_seconds is none %}
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">No timing data yet.</p>
+            {% endif %}
+        </section>
+
         <section class="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
             {# Left: list. Counts come from the same server data as the chart. #}

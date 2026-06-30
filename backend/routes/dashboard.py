@@ -1,5 +1,5 @@
 from flask import Blueprint, abort, current_app, render_template
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from backend.models.database import ImageRecord, db
@@ -36,9 +36,23 @@ def dataset_dashboard(dataset_type: str):
     label_counts = [{"label": label, "count": int(count)} for label, count in rows]
     total = sum(item["count"] for item in label_counts)
 
+    # Personal stat: average is scoped to the current user's own contributions
+    # on this project. NULL durations are skipped by AVG. None means this user
+    # has no timed images yet (other users' work never bleeds in).
+    avg_seconds = (
+        db.session.query(func.avg(ImageRecord.labeling_duration_seconds))
+        .filter(ImageRecord.project == dataset_type)
+        .filter(ImageRecord.status == "labeled")
+        .filter(ImageRecord.contributor == current_user.username)
+        .filter(ImageRecord.labeling_duration_seconds.isnot(None))
+        .scalar()
+    )
+    avg_labeling_seconds = round(float(avg_seconds), 1) if avg_seconds is not None else None
+
     return render_template(
         "analytics.html",
         dataset_type=dataset_type,
         label_counts=label_counts,
         total=total,
+        avg_labeling_seconds=avg_labeling_seconds,
     )

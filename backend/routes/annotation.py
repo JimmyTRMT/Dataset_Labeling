@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     redirect,
@@ -34,14 +37,29 @@ def _require_login():
 #   upload -> label -> upload -> label -> ...
 @annotation_bp.get("/annotation")
 def annotation_page():
+    # Pending images are per-user. Without the contributor filter, concurrent
+    # annotators would steal each other's drafts off the queue.
     pending_image = (
-        ImageRecord.query.filter_by(status="unlabeled")
+        ImageRecord.query.filter_by(
+            status="unlabeled",
+            contributor=current_user.username,
+        )
         .order_by(ImageRecord.uploaded_at.asc())
         .first()
     )
     project_labels = current_app.config["PROJECT_LABELS"]
 
     if pending_image:
+        # Stamp the view time so submit_label can compute the labeling duration.
+        # A failed commit must not block the viewer - log and keep going.
+        pending_image.last_viewed_at = datetime.utcnow()
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Failed to stamp last_viewed_at for image %s", pending_image.id
+            )
         return render_template(
             "annotation.html",
             mode="label",
@@ -110,6 +128,9 @@ def submit_upload():
 @annotation_bp.post("/annotation/<int:image_id>/label")
 def submit_label(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
+    # Pending images belong to their uploader. Block id-guessing across users.
+    if image.status == "unlabeled" and image.contributor != current_user.username:
+        abort(403)
     label = request.form.get("label", "").strip()
 
     valid_labels = current_app.config["PROJECT_LABELS"].get(image.project, [])
@@ -123,6 +144,17 @@ def submit_label(image_id: int):
         current_app.logger.exception("Failed to move pending image %s into its label folder", image_id)
         flash("Could not move the image file. Please try again.", "warning")
         return redirect(url_for("annotation.annotation_page"))
+
+    # Compute labeling duration from the view-time stamped in annotation_page.
+    # Negative deltas (clock skew) and missing stamp leave the field NULL so
+    # AVG skips the row instead of poisoning the dashboard.
+    now = datetime.utcnow()
+    image.labeled_at = now
+    if image.last_viewed_at is not None:
+        duration = (now - image.last_viewed_at).total_seconds()
+        if duration >= 0:
+            image.labeling_duration_seconds = duration
+    image.last_viewed_at = None
 
     try:
         db.session.commit()
@@ -140,6 +172,10 @@ def submit_label(image_id: int):
 @annotation_bp.post("/annotation/<int:image_id>/delete")
 def delete_annotation(image_id: int):
     image = ImageRecord.query.get_or_404(image_id)
+    # Admins delete anything; annotators only their own (pending OR labeled).
+    # Subsumes the older pending-only cross-user guard - strictly stricter now.
+    if not current_user.is_admin and image.contributor != current_user.username:
+        abort(403)
     delete_image_file(image, current_app.config["UPLOAD_FOLDER"])
     try:
         db.session.delete(image)
