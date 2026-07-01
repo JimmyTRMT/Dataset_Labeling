@@ -406,6 +406,27 @@ attackers cannot enumerate valid usernames through `/forgot`.
 `@login_required` then checks `current_user.is_admin`. Anonymous users
 get a 302 to `/login`; logged-in non-admins get a 403.
 
+### Per-row delete authorization
+
+Image deletion is **role-aware**, enforced in
+`backend/routes/annotation.py::delete_annotation`:
+
+| Caller         | Can delete                                                       |
+|----------------|------------------------------------------------------------------|
+| Admin          | Any image (pending or labeled), any contributor.                 |
+| Annotator      | Only images where `image.contributor == current_user.username`.  |
+
+The check runs after `get_or_404` and short-circuits with `abort(403)`
+when it fails. It covers both pending and labeled rows, so it also
+subsumes the per-user pending guard from
+[Section 6](#6-annotation-workflow-two-steps).
+
+The Delete button in `dashboard.html` (the dataset browser) is also
+hidden when the current user has no right to delete that row &mdash;
+**this is UX defence only**. The real barrier is the 403 in
+`delete_annotation`. A user who forges a `POST /annotation/<id>/delete`
+on someone else's image without admin role still gets a 403.
+
 ### CLI commands
 
 These run via the **venv** Python, e.g.:
@@ -561,12 +582,26 @@ tampering with it.
 4. Commits the row inside try/except + rollback. If the commit fails,
    the file is removed from disk so we never leave an orphan.
 
+### Per-user pending isolation
+
+Pending images (`status="unlabeled"`) are **private to their
+contributor**. `GET /annotation` filters the pending queue on
+`contributor == current_user.username`, so two annotators working in
+parallel never see each other's drafts.
+
+The same rule is enforced on the mutating endpoints:
+`POST /annotation/<id>/label` and `POST /annotation/<id>/delete` both
+check the contributor on `unlabeled` rows and `abort(403)` if a user
+tries to act on someone else's pending image (id-guessing defence).
+Labeled rows stay in the shared dataset and follow the role-based
+delete rule documented in [Section 4](#4-authentication-and-access-control).
+
 ### Step 2 &mdash; labeling viewer
 
-`GET /annotation` (now there is an unlabeled image) renders the
-labeling viewer instead of the upload form. The image lives in a fixed
-640-px-tall frame with `bg-black`. `annotation.js` layers four CSS
-transforms on top:
+`GET /annotation` (now there is an unlabeled image you own) renders
+the labeling viewer instead of the upload form. The image lives in a
+fixed 640-px-tall frame with `bg-black`. `annotation.js` layers four
+CSS transforms on top:
 
 - **Zoom** &mdash; mouse wheel (clamped to 0.1x &ndash; 10x).
 - **Pan** &mdash; click-and-drag.
@@ -579,6 +614,11 @@ Keyboard:
 - `1` to `9` &mdash; select the matching label card.
 - `Enter` &mdash; submit when a label is selected.
 
+When the viewer is rendered, the route also stamps
+`image.last_viewed_at = datetime.utcnow()`. This stamp is what powers
+the labeling-time metric on the analytics dashboard
+([Section 8](#8-analytics-dashboard)).
+
 `POST /annotation/<id>/label`:
 
 1. Validates the label against `PROJECT_LABELS[image.project]`.
@@ -586,7 +626,10 @@ Keyboard:
    - `os.replace` the file from `_pending/` to `<Label>/`,
    - updates `image.label`, `image.status = "labeled"`,
    - rewrites `image.stored_filename` to the new relative path.
-3. Commits.
+3. Computes `labeling_duration_seconds = now - last_viewed_at`,
+   stamps `labeled_at`, resets `last_viewed_at`. Negative deltas
+   (clock skew) leave the duration NULL so `AVG()` skips the row.
+4. Commits.
 
 ---
 
@@ -680,6 +723,33 @@ What this gives you for free:
 
 The route hands the template a `label_counts` list (each item is
 `{"label": ..., "count": ...}`) plus the precomputed `total`.
+
+### Personal labeling-time metric
+
+In addition to the (shared) label distribution, each dashboard shows
+**your average labeling time on this project**. The query is scoped
+to the current user, so Fundus and WasteSorting each have their own
+number and one user's pace never bleeds into another's view:
+
+```python
+avg_seconds = (
+    db.session.query(func.avg(ImageRecord.labeling_duration_seconds))
+    .filter(ImageRecord.project == dataset_type)
+    .filter(ImageRecord.status == "labeled")
+    .filter(ImageRecord.contributor == current_user.username)
+    .filter(ImageRecord.labeling_duration_seconds.isnot(None))
+    .scalar()
+)
+```
+
+`AVG()` skips NULL rows natively, so pre-feature labeled images (where
+`labeling_duration_seconds` was never recorded) are silently ignored
+instead of poisoning the mean. A user who has never annotated on this
+project sees `None`, rendered as a dash with a "No timing data yet"
+caption.
+
+The duration itself is populated by `submit_label()` &mdash; see the
+view-time stamp in [Section 6]
 
 ### Template (`frontend/templates/analytics.html`)
 

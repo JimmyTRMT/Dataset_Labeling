@@ -123,14 +123,19 @@
                                 <td class="px-3 py-2 whitespace-nowrap">{{ image.contributor or '-' }}</td>
                                 <td class="px-3 py-2 whitespace-nowrap">{{ image.uploaded_at | local_time }}</td>
                                 <td class="px-3 py-2 text-right whitespace-nowrap">
-                                    <form method="POST" action="{{ url_for('annotation.delete_annotation', image_id=image.id) }}"
-                                          class="inline delete-image-form">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit"
-                                                class="px-2.5 py-1 text-xs rounded border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 transition-colors">
-                                            Delete
-                                        </button>
-                                    </form>
+                                    {# UX-level filter only - the real authorization lives in delete_annotation (abort 403). #}
+                                    {% if current_user.is_admin or image.contributor == current_user.username %}
+                                        <form method="POST" action="{{ url_for('annotation.delete_annotation', image_id=image.id) }}"
+                                              class="inline delete-image-form">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit"
+                                                    class="px-2.5 py-1 text-xs rounded border border-rose-500/40 text-rose-600 dark:text-rose-300 hover:bg-rose-500/10 transition-colors">
+                                                Delete
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <span class="text-xs text-slate-400 dark:text-slate-500" title="Only the contributor or an admin can delete this image.">&mdash;</span>
+                                    {% endif %}
                                 </td>
                             </tr>
                         {% endfor %}
